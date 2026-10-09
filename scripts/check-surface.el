@@ -9,7 +9,7 @@
 ;; Reads every tether*.el form (strings and comments are not symbols,
 ;; so docstrings may mention anything) and collects the symbols starting
 ;; with magit-, forge- or ghub-.  Fails when one is internal (contains
-;; "--") or missing from the allowlist in tether-deps.el (SPEC.md §2.1).
+;; "--") or missing from the allowlist in tether-deps.el.
 
 ;;; Code:
 
@@ -53,7 +53,7 @@
   (dolist (file (directory-files default-directory nil "\\`tether.*\\.el\\'"))
     (pcase-dolist (`(,line ,sym ,reason) (check-surface--file file allowed))
       (setq failed t)
-      (message "%s:%d: `%s': %s (SPEC.md §2.1)" file line sym reason)))
+      (message "%s:%d: `%s': %s" file line sym reason)))
   (if failed
       (kill-emacs 1)
     (message "check-surface: only allowlisted magit/forge/ghub symbols used")))

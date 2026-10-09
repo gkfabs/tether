@@ -7,7 +7,7 @@
 ;;; Commentary:
 
 ;; These tests load the real magit, forge and ghub (no network) and
-;; check that they still provide what tether uses (SPEC.md §2.2).  CI
+;; check that they still provide what tether uses.  CI
 ;; runs them against the "min" and "latest" dependency sets, and weekly
 ;; against the latest MELPA snapshots.
 
@@ -24,10 +24,15 @@
   "Every function, variable, class, slot, argument and method is there."
   (should (equal (tether--dependency-problems) nil)))
 
-(ert-deftest tether-deps-test-dispatch-key-free ()
-  "The key tether adds to the dispatch menus is not taken (SPEC §8.2)."
+(ert-deftest tether-deps-test-dispatch-key ()
+  "Tether is on @ in the dispatch menus: the key was free."
+  (require 'tether)
   (dolist (prefix '(magit-dispatch forge-dispatch))
-    (should-not (ignore-errors (transient-get-suffix prefix "@")))))
+    (let ((suffix (ignore-errors (transient-get-suffix prefix "@"))))
+      (should suffix)
+      (should (memq 'tether (flatten-tree (if (vectorp suffix)
+                                               (append suffix nil)
+                                             suffix)))))))
 
 ;;;; Requests: the URL and token ghub really uses
 
@@ -54,7 +59,7 @@ everything between them and THUNK is ghub's real code."
 
 (defun tether-deps-test--rest (host forge resource)
   "Capture the request tether makes for RESOURCE on HOST of FORGE.
-These are the arguments `tether--request' passes (SPEC §5.1)."
+These are the arguments `tether--request' passes."
   (tether-deps-test--capture
    (lambda ()
      (ghub-request "GET" resource nil
@@ -111,7 +116,7 @@ These are the arguments `tether--request' passes (SPEC §5.1)."
                  "https://ghe.example.com/api/v3/repos/o/r/pulls/1")))
 
 (ert-deftest tether-deps-test-graphql-urls ()
-  "GraphQL endpoints derived from the REST host (SPEC §5.3)."
+  "GraphQL endpoints derived from the REST host."
   (should (equal (car (tether-deps-test--graphql "api.github.com" 'github))
                  "https://api.github.com/graphql"))
   (should (equal (car (tether-deps-test--graphql "ghe.example.com/api/v3"

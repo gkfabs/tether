@@ -7,7 +7,7 @@
 ;;; Commentary:
 
 ;; Payloads and flows of `tether--post-comment' for GitHub and GitLab
-;; (SPEC.md §5.3, §5.4), with the API stubbed, and `tether-nitpick'
+;;, with the API stubbed, and `tether-nitpick'
 ;; end to end on a git repository.
 
 ;;; Code:
@@ -56,7 +56,7 @@
                    (new_line . 3)))))
 
 (ert-deftest tether-post-test-gitlab-position-context ()
-  "A context line needs both line numbers (SPEC §5.4)."
+  "A context line needs both line numbers."
   (let ((position (tether-gitlab--position
                    (tether-post-test--ctx (tether-test-gitlab-repo))
                    (tether-post-test--target 10 10))))
@@ -186,7 +186,7 @@ error of the REST comment request."
                        '((owner . "o") (name . "r") (number . 7))))))))
 
 (ert-deftest tether-post-test-github-pending-review ()
-  "With a pending review, the comment is added to it (SPEC §5.3)."
+  "With a pending review, the comment is added to it."
   (let ((repo (tether-test-github-repo)))
     (tether-test-with-handler (tether-post-test--github '(("R1" . 2)))
       (let ((result (tether--post-comment repo (tether-post-test--ctx repo)

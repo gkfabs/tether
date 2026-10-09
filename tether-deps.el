@@ -10,7 +10,7 @@
 ;;; Commentary:
 
 ;; The single source of truth for every symbol tether uses from magit,
-;; forge and ghub (SPEC.md §2.1).  It is used three ways:
+;; forge and ghub.  It is used three ways:
 ;;
 ;; - `tether-check-dependencies' verifies at runtime that the installed
 ;;   packages still provide them, and warns once otherwise;
@@ -19,7 +19,8 @@
 ;; - scripts/check-surface.el fails when tether's code uses a
 ;;   magit/forge/ghub symbol that is not listed here.
 ;;
-;; Adding a symbol here needs a reason in SPEC.md §2.1.
+;; Keep the list short: every symbol here is something another package
+;; may rename.  Prefer public (single dash) symbols, never internal ones.
 
 ;;; Code:
 
@@ -60,6 +61,7 @@
     magit-rev-ancestor-p
     magit-rev-parse
     magit-rev-verify
+    magit-section-match
     magit-split-branch-name
     magit-status-setup-buffer
     magit-toplevel)
@@ -79,11 +81,14 @@
     (forge-gitlab-repository)
     (forge-pullreq id repository number title state author base-ref head-ref
                    base-rev head-rev head-repo their-id cross-repo-p
-                   locked-p))
+                   locked-p)
+    ;; Sections of magit diff buffers.
+    (magit-file-section value source start children)
+    (magit-hunk-section from-range to-range content end parent))
   "Classes tether dispatches on, each followed by the slots it reads.")
 
 (defconst tether--external-other
-  '(forge-topic-mode magit-mode ghub-error)
+  '(forge-topic-mode magit-mode magit-diff-mode ghub-error)
   "Other symbols tether names: modes for `derived-mode-p', error symbols.")
 
 (defconst tether--external-keyword-args

@@ -9,7 +9,7 @@
 
 ;;; Commentary:
 
-;; Runs git for `tether-diff' (SPEC.md §4):
+;; Runs git for `tether-diff':
 ;;
 ;; - the line map of a file in the pull request diff, built from a git
 ;;   invocation the user's git configuration cannot change, and cached
@@ -149,7 +149,7 @@ Return nil when the line changed locally since CTX's head."
 Return nil when that line changed locally since CTX's head."
   (tether--from-head (tether--drifts ctx path) line))
 
-;;;; Lookup (SPEC.md §4.4)
+;;;; Lookup
 
 (defun tether-line-at (ctx path line)
   "Return the `tether-line' of LINE of the current buffer visiting PATH.

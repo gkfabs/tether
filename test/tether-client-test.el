@@ -29,7 +29,7 @@
     (user-error (cadr err))))
 
 (ert-deftest tether-client-test-request-arguments ()
-  "Host, token and forge come from the repository (SPEC §5.1)."
+  "Host, token and forge come from the repository."
   (tether-test-with-api '(("/projects/x" . ((id . 1))))
     (should (equal (tether--request (tether-test-gitlab-repo) "GET" "/projects/x")
                    '((id . 1))))

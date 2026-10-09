@@ -98,7 +98,7 @@ missing commits are fetched without asking."
               (should (= (length tether-test-requests) 3)))))))))
 
 (ert-deftest tether-context-test-checked-out-behind ()
-  "On the PR branch, one commit behind the PR head (SPEC §3.5)."
+  "On the PR branch, one commit behind the PR head."
   (tether-test-with-repos
     (let ((pullreq (tether-test-pullreq)))
       (tether-context-test-with (tether-test-github-repo)

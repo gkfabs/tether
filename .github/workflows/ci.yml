@@ -1,4 +1,4 @@
-# SPEC.md §2.2: compile, lint and test against the oldest supported
+# Compile, lint and test against the oldest supported
 # dependencies (min) and the latest MELPA snapshots (latest), on each push
 # and weekly, so magit/forge/ghub changes are found before users do.
 name: CI

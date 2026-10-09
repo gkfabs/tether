@@ -9,7 +9,7 @@
 
 ;;; Commentary:
 
-;; GitLab implementations of the per-forge operations (SPEC.md §5.4).
+;; GitLab implementations of the per-forge operations.
 
 ;;; Code:
 
@@ -26,7 +26,7 @@
     (let-alist (tether--request repo "GET"
                                 (tether-gitlab--merge-request repo number))
       ;; Null while GitLab prepares the diff, or when the MR has no
-      ;; commits (SPEC.md §3.2 step 6).
+      ;; commits.
       (unless (and .diff_refs.base_sha .diff_refs.head_sha)
         (user-error "Tether: GitLab has not computed the diff of !%s yet; \
 retry in a moment" number))
@@ -36,7 +36,7 @@ retry in a moment" number))
             :base-tip nil
             :base-ref .target_branch))))
 
-;;;; Comments (SPEC.md §5.4)
+;;;; Comments
 
 (defun tether-gitlab--line-code (path line)
   "Return GitLab's line_code of LINE in file PATH.

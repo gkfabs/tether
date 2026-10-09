@@ -9,7 +9,7 @@
 
 ;;; Commentary:
 
-;; The review context (SPEC.md §3): the forge repository, the pull
+;; The review context: the forge repository, the pull
 ;; request, and the commits its diff is made of, according to the API.
 ;; It is resolved once per worktree and pull request, then cached until
 ;; HEAD moves, the branch changes, `tether-context-ttl' passes, or
@@ -47,7 +47,7 @@
   repo          ; forge repository
   pullreq       ; forge pull request
   toplevel      ; worktree, with a trailing slash
-  base-sha      ; diff base (SPEC.md §3.3)
+  base-sha      ; diff base
   start-sha     ; GitLab start_sha; base-sha on GitHub
   head-sha      ; PR head according to the API
   base-ref      ; target branch name
@@ -58,7 +58,7 @@
   head-state    ; (STATE COUNT): same, behind, ahead, other or none
   local-head    ; HEAD when resolved, to notice it moving
   local-branch  ; current branch when resolved
-  generation    ; increases with each resolution (SPEC.md §3.4)
+  generation    ; increases with each resolution
   fetched-at)   ; `float-time' of the resolution
 
 (defvar tether--contexts (make-hash-table :test #'equal)
@@ -69,7 +69,13 @@
 
 (defvar-local tether--buffer-pullreq nil
   "Id of the pull request of a buffer that is not tied to a branch.
-Set in the blob buffers tether opens to review without checkout.")
+Set in the diff and blob buffers tether opens, so they belong to
+their PR whatever the branch.")
+;; magit re-runs the major mode when it refreshes these buffers.
+(put 'tether--buffer-pullreq 'permanent-local t)
+
+(defvar tether-context-functions nil
+  "Functions called with each newly resolved review context.")
 
 (defvar tether--offered-branches nil
   "Branches for which recording the pull request was already offered.")
@@ -148,7 +154,7 @@ config, such as branches you created yourself."
 (defun tether--current-pullreq (repo pick)
   "Return (PULLREQ . CHECKED-OUT) for the current buffer of REPO.
 CHECKED-OUT is non-nil when the PR is the current branch's.  With
-PICK non-nil, read the pull request instead (SPEC.md §3.2)."
+PICK non-nil, read the pull request instead."
   (let ((at-point (and (derived-mode-p 'forge-topic-mode 'magit-mode)
                        (forge-current-pullreq)))
         (branch (magit-get-current-branch)))
@@ -314,6 +320,7 @@ CHECKED-OUT is non-nil when PULLREQ is the current branch's."
         cached
       (let ((ctx (tether--build-context repo pullreq toplevel checked-out)))
         (puthash key ctx tether--contexts)
+        (run-hook-with-args 'tether-context-functions ctx)
         (when-let* ((notes (tether--notes ctx)))
           (message "Tether: %s" (string-join notes "; ")))
         ctx))))

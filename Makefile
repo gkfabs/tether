@@ -1,6 +1,5 @@
 # Thin wrapper around Eask.  TETHER_DEPS selects the dependency set:
 # latest (MELPA snapshots, default) or min (oldest supported releases).
-# See SPEC.md §2.2.
 
 EASK ?= eask
 EMACS ?= emacs

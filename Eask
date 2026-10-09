@@ -1,6 +1,6 @@
 ;; -*- mode: eask; lexical-binding: t -*-
 
-;; Dependency sets (SPEC.md §2.2), chosen with the TETHER_DEPS
+;; Dependency sets, chosen with the TETHER_DEPS
 ;; environment variable:
 ;;
 ;; - latest (default): everything from MELPA snapshots.

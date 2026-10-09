@@ -10,7 +10,7 @@
 ;;; Commentary:
 
 ;; `tether-nitpick' comments on the current line or region of a file
-;; buffer, `tether-nitpick-file' on the whole file (SPEC.md §6.1).
+;; buffer, `tether-nitpick-file' on the whole file.
 ;;
 ;; Lines are checked before anything is typed: they must be in the pull
 ;; request diff, in one hunk, and unchanged locally since the PR head.
@@ -25,6 +25,7 @@
 (require 'magit)
 (require 'tether-context)
 (require 'tether-lines)
+(require 'tether-nav)
 
 (defun tether--buffer-path (ctx)
   "Return the path of the current buffer's file in CTX's worktree."
@@ -56,6 +57,45 @@ Signal a `user-error' saying why when they cannot take a comment."
           :start (car region)
           :end (cdr region)
           :side 'right)))
+
+(defun tether--diff-target (ctx)
+  "Return the comment target of the line or region at point in a diff.
+The diff must be CTX's PR diff.  Removed lines are commented on the
+base side; a region must stay on one side of one hunk."
+  (unless (tether--diff-range-of-pr-p ctx)
+    (user-error "Tether: this is not the diff of %s; open it with `tether-diff'"
+                (tether--label (tether-context-repo ctx)
+                               (oref (tether-context-pullreq ctx) number))))
+  (let* ((region (use-region-p))
+         (end-pos (if region
+                      (let ((end (region-end)))
+                        (if (and (> end (region-beginning))
+                                 (save-excursion (goto-char end) (bolp)))
+                            (1- end)
+                          end))
+                    (point)))
+         (beg (tether--diff-line-at (if region (region-beginning) (point))))
+         (end (tether--diff-line-at end-pos)))
+    (unless (and beg end)
+      (user-error "Tether: point is not on a line of a hunk"))
+    (unless (eq (plist-get beg :hunk) (plist-get end :hunk))
+      (user-error "Tether: the region spans two hunks"))
+    (let ((side (if (eq (plist-get end :kind) :removed) 'left 'right)))
+      (unless (eq (eq (plist-get beg :kind) :removed) (eq side 'left))
+        (user-error "Tether: the region mixes removed and kept lines; \
+select lines of one side"))
+      (let* ((path (plist-get end :path))
+             (map (tether-file-map ctx path))
+             (table (and map (if (eq side 'left) (tether-file-map-by-old map)
+                               (tether-file-map-by-new map))))
+             (key (if (eq side 'left) :old :new))
+             (start (and table (gethash (plist-get beg key) table)))
+             (last (and table (gethash (plist-get end key) table))))
+        (unless (and start last)
+          (user-error "Tether: %s line %d is not in the PR diff" path
+                      (plist-get end key)))
+        (list :path path :old-path (tether-file-map-old-path map)
+              :start start :end last :side side)))))
 
 (defun tether--file-target (ctx path)
   "Return the target of a comment on the whole file PATH in CTX."
@@ -103,18 +143,24 @@ The text may take a while to write; the PR head may have moved."
 (defun tether-nitpick (&optional pick)
   "Comment on the current line or the active region in its pull request.
 The lines must be in the pull request diff, in one hunk, and
-unchanged locally since the PR head.  With prefix argument PICK,
+unchanged locally since the PR head.  In the PR diff (`tether-diff'),
+removed lines can be commented too.  With prefix argument PICK,
 choose the pull request."
   (interactive "P")
-  (let* ((ctx (tether-context t pick))
-         (path (tether--buffer-path ctx))
-         (lines (tether--buffer-lines))
-         (target (tether--line-target ctx path lines))
-         (body (tether--read-body target))
-         (ctx (tether--current-again ctx))
-         (target (tether--line-target ctx path lines)))
-    (deactivate-mark)
-    (tether--post ctx target body)))
+  (let ((ctx (tether-context t pick)))
+    (if (derived-mode-p 'magit-diff-mode)
+        (let* ((target (tether--diff-target ctx))
+               (body (tether--read-body target)))
+          (deactivate-mark)
+          (tether--post ctx target body))
+      (let* ((path (tether--buffer-path ctx))
+             (lines (tether--buffer-lines))
+             (target (tether--line-target ctx path lines))
+             (body (tether--read-body target))
+             (ctx (tether--current-again ctx))
+             (target (tether--line-target ctx path lines)))
+        (deactivate-mark)
+        (tether--post ctx target body)))))
 
 ;;;###autoload
 (defun tether-nitpick-file (&optional pick)

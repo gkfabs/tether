@@ -10,7 +10,7 @@
 ;;; Commentary:
 
 ;; Pure functions from git's diff output to the structures tether
-;; comments with (SPEC.md §4): which lines of a file are in the pull
+;; comments with: which lines of a file are in the pull
 ;; request diff, on which side, in which hunk.  Also the mapping
 ;; through local edits between a buffer line and a PR head line.
 ;;
@@ -106,7 +106,7 @@ Used when no ---/+++ lines follow, as for a mode change."
 (defun tether-diff-parse (text)
   "Parse TEXT, the output of git diff, into a list of `tether-file-map'.
 Expects the a/ and b/ prefixes and three lines of context; see
-SPEC.md §4.2 for the git options that guarantee them."
+`tether--diff-options' for the git options that guarantee them."
   (let ((lines (split-string text "\n"))
         maps map hunks hunk-lines hunk old new pos)
     (cl-flet ((close-hunk ()
@@ -221,7 +221,7 @@ old path for deleted files."
 
 (defun tether-file-map-region-problem (map beg end)
   "Return why head lines BEG to END of MAP cannot take one comment, or nil.
-A comment covers lines of one hunk (SPEC.md §4.4)."
+A comment covers lines of one hunk."
   (let ((first (tether-file-map-line map beg))
         (last (tether-file-map-line map end)))
     (cond

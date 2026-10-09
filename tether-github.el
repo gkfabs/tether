@@ -9,7 +9,7 @@
 
 ;;; Commentary:
 
-;; GitHub implementations of the per-forge operations (SPEC.md §5.3).
+;; GitHub implementations of the per-forge operations.
 
 ;;; Code:
 
@@ -34,7 +34,7 @@ GitHub's diff base is the merge-base of the two, computed locally."
           :base-tip .base.sha
           :base-ref .base.ref)))
 
-;;;; Comments (SPEC.md §5.3)
+;;;; Comments
 
 (defun tether-github--side (target)
   "Return GitHub's side of TARGET: RIGHT for the head, LEFT for the base."

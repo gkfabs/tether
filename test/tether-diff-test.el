@@ -7,7 +7,7 @@
 ;;; Commentary:
 
 ;; The parser against real git output (test/fixtures/*.diff, made with
-;; the options of SPEC.md §4.2), and the drift mapping.
+;; the options of `tether--diff-options'), and the drift mapping.
 
 ;;; Code:
 

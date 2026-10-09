@@ -9,7 +9,7 @@
 
 ;;; Commentary:
 
-;; Every request goes through `tether--call' (SPEC.md §5.1):
+;; Every request goes through `tether--call':
 ;;
 ;; - the host is always the repository's `apihost', never ghub's
 ;;   default (problem 2 of the design notes);
@@ -207,7 +207,7 @@ PARAMS and PAYLOAD are passed to `ghub-request'.  Signal a
         (plist-get result :value)
       (user-error "%s" (plist-get result :message)))))
 
-;;;; Per-forge operations (SPEC.md §5.2)
+;;;; Per-forge operations
 
 (cl-defgeneric tether--fetch-diff-refs (repo pullreq)
   "Return the commits of PULLREQ of REPO according to the API.
@@ -227,7 +227,7 @@ The value is a plist:
 
 (cl-defgeneric tether--post-comment (repo ctx target body)
   "Post BODY on TARGET of the pull request of CTX on REPO.
-TARGET is a plist (SPEC.md §5.2):
+TARGET is a plist:
   :path      the file, as in the PR head;
   :old-path  its path on the base side;
   :start, :end  the first and last `tether-line', or nil for a
@@ -249,16 +249,18 @@ to tell the user.")
                      (tether-line-new line))))
          (start (plist-get target :start))
          (end (plist-get target :end)))
-    (cond ((null end) (plist-get target :path))
-          ((eq start end)
-           (format "%s:%d" (plist-get target :path) (funcall number end)))
-          (t (format "%s:%d-%d" (plist-get target :path)
-                     (funcall number start) (funcall number end))))))
+    (concat
+     (cond ((null end) (plist-get target :path))
+           ((eq start end)
+            (format "%s:%d" (plist-get target :path) (funcall number end)))
+           (t (format "%s:%d-%d" (plist-get target :path)
+                      (funcall number start) (funcall number end))))
+     (and end (eq side 'left) " (removed)"))))
 
 (defun tether--rejected (service target result)
   "Signal that SERVICE refused TARGET, as told by the failed RESULT.
 When the forge says the line is not in its diff, explain that its
-diff and git's can differ (SPEC.md §4.2); the caller keeps the text."
+diff and git's can differ; the caller keeps the text."
   (let* ((text (or (tether--error-text (plist-get result :payload))
                    (plist-get result :message)))
          (diff-p (and (memq (plist-get result :status) '(400 422))

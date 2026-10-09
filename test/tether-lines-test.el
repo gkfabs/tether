@@ -78,7 +78,7 @@ In the PR, a.el changes line 2 (\"two\" -> \"TWO\") and b.el is added."
                                 (cadr err)))))))
 
 (ert-deftest tether-lines-test-unsaved-edit ()
-  "Unsaved buffer changes count too (SPEC §4.3)."
+  "Unsaved buffer changes count too."
   (tether-lines-test-at-head
     (tether-lines-test-visiting "a.el"
       (goto-char (point-min))
@@ -129,7 +129,7 @@ In the PR, a.el changes line 2 (\"two\" -> \"TWO\") and b.el is added."
       (should (eq (tether-line-kind (tether-file-map-line map 4)) :added)))))
 
 (ert-deftest tether-lines-test-user-git-config ()
-  "The user's diff configuration does not change the line map (SPEC §16)."
+  "The user's diff configuration does not change the line map."
   (tether-lines-test-at-head
     (dolist (setting '(("diff.noprefix" "true") ("diff.mnemonicPrefix" "true")
                        ("color.ui" "always") ("color.diff" "always")
