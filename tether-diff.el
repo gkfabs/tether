@@ -27,7 +27,11 @@
   old    ; line number on the base side, nil when added
   new    ; line number on the head side, nil when removed
   pos    ; 1-based position below the first @@ (GitHub's `position')
-  hunk)  ; index of its hunk in the file's diff, from 0
+  hunk   ; index of its hunk in the file's diff, from 0
+  code)  ; (OLD . NEW) line counters at this line, for GitLab's
+         ; line_code: an added line has the old number the next old
+         ; line would get, a removed line the next new number, as in
+         ; GitLab's own diff parser
 
 (cl-defstruct (tether-hunk (:copier nil))
   "One hunk of a file's diff."
@@ -170,6 +174,7 @@ SPEC.md §4.2 for the git options that guarantee them."
                         (?\s :context) (?+ :added) (?- :removed))))
             (push (make-tether-line
                    :kind kind
+                   :code (cons old new)
                    :old (and (not (eq kind :added)) (prog1 old (cl-incf old)))
                    :new (and (not (eq kind :removed)) (prog1 new (cl-incf new)))
                    :pos pos

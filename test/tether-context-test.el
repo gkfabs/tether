@@ -157,7 +157,8 @@ missing commits are fetched without asking."
   (tether-test-with-repos
     (tether-context-test-with (tether-test-github-repo) nil
       (let ((err (should-error (tether-context t) :type 'user-error)))
-        (should (string-match-p "no pull request for branch main; pick one with C-u"
+        (should (string-match-p "no pull request for branch main in the forge \
+database; run .forge-pull. if it is new, pick one with C-u"
                                 (cadr err)))))))
 
 (ert-deftest tether-context-test-gitlab ()

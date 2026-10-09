@@ -167,8 +167,8 @@ PICK non-nil, read the pull request instead (SPEC.md §3.2)."
           (when pullreq
             (tether--offer-branch-config repo branch pullreq)))
         (unless pullreq
-          (user-error "Tether: no pull request for branch %s; pick one with \
-C-u, check it out with `forge-checkout-pullreq', or set \
+          (user-error "Tether: no pull request for branch %s in the forge \
+database; run `forge-pull' if it is new, pick one with C-u, or set \
 branch.%s.pullRequest" branch branch))
         (cons pullreq t))))))
 

@@ -120,5 +120,39 @@ plist with :method, :resource and the keyword arguments."
                              nil)))))
        ,@body)))
 
+(defmacro tether-test-with-handler (handler &rest body)
+  "Run BODY with the forge API answered by HANDLER.
+`ghub-request' and `ghub-query' call HANDLER with a plist:
+  (:method M :resource R :payload P) for REST,
+  (:query Q :variables V) for GraphQL.
+HANDLER returns (:value VALUE) or (:error ERR HEADERS), ERR as ghub
+passes it to an errorback.  Each request is pushed on
+`tether-test-requests'."
+  (declare (indent 1) (debug t))
+  `(let ((tether-test-requests nil)
+         (handler ,handler))
+     (cl-flet ((answer (request args)
+                 (push request tether-test-requests)
+                 (pcase (funcall handler request)
+                   (`(:value ,value)
+                    (funcall (plist-get args :callback) value nil nil nil))
+                   (`(:error ,err ,headers)
+                    (funcall (plist-get args :errorback) err headers nil nil))
+                   (other (error "Bad test answer %S" other)))))
+       (cl-letf (((symbol-function 'ghub-request)
+                  (lambda (method resource _params &rest args)
+                    (answer (list :method method :resource resource
+                                  :payload (plist-get args :payload))
+                            args)))
+                 ((symbol-function 'ghub-query)
+                  (lambda (query variables &rest args)
+                    (answer (list :query query :variables variables) args))))
+         ,@body))))
+
+(defun tether-test-graphql-operation (request)
+  "Return the name of the first field of REQUEST's GraphQL query, or nil."
+  (when-let* ((query (plist-get request :query)))
+    (car (nth 1 query))))
+
 (provide 'tether-test-helpers)
 ;;; tether-test-helpers.el ends here

@@ -26,10 +26,12 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'seq)
 (require 'subr-x)
 (require 'url-util)
 (require 'ghub)
 (require 'forge)
+(require 'tether-diff)
 
 (defcustom tether-request-timeout 10
   "Seconds to wait for an answer from GitHub or GitLab."
@@ -108,35 +110,15 @@ check forge's token, see (info \"(forge)Setup\")"
              (mapconcat (lambda (d) (format "%s" d)) data " ")))
     (_ (format "Tether: request to %s failed: %S" host err))))
 
-(cl-defun tether--call (repo method resource &optional params &key payload)
-  "Send METHOD RESOURCE with PARAMS or PAYLOAD to the API of REPO.
-Wait for the answer and return a plist:
-  (:ok t :value VALUE :headers HEADERS) on success,
-  (:ok nil :status STATUS :payload PAYLOAD :headers HEADERS :message MSG)
-  on an HTTP or connection error, STATUS being nil for the latter.
-Signal a `user-error' when no answer arrives within
+(defun tether--wait (host send)
+  "Call SEND with a function to report the result, and wait for it.
+SEND starts an asynchronous request to HOST and arranges for the
+function it receives to be called with the result plist.  Return
+that plist.  Signal a `user-error' when it does not arrive within
 `tether-request-timeout' seconds."
-  (let ((host (oref repo apihost))
-        (result nil))
+  (let ((result nil))
     (message "Tether: contacting %s..." host)
-    (ghub-request method resource params
-                  :payload payload
-                  :host host
-                  :auth 'forge
-                  :forge (tether--forge-type repo)
-                  :callback (lambda (value headers &rest _)
-                              (setq result (list :ok t :value value
-                                                 :headers headers)))
-                  :errorback (lambda (err headers &rest _)
-                               (setq result
-                                     (list :ok nil
-                                           :status (pcase err
-                                                     (`(error http ,s . ,_) s))
-                                           :payload (pcase err
-                                                      (`(error http ,_ ,p . ,_) p))
-                                           :headers headers
-                                           :message (tether--request-error-message
-                                                     host err headers)))))
+    (funcall send (lambda (plist) (setq result plist)))
     (let ((deadline (+ (float-time) tether-request-timeout)))
       (while (and (not result) (< (float-time) deadline))
         (accept-process-output nil 0.05)))
@@ -145,6 +127,75 @@ Signal a `user-error' when no answer arrives within
                   host tether-request-timeout))
     (message "Tether: contacting %s...done" host)
     result))
+
+(defun tether--error-result (host err headers)
+  "Return the result plist for the error ERR from HOST with HEADERS."
+  (list :ok nil
+        :status (pcase err (`(error http ,s . ,_) s))
+        :payload (pcase err (`(error http ,_ ,p . ,_) p))
+        :headers headers
+        :message (tether--request-error-message host err headers)))
+
+(cl-defun tether--call (repo method resource &optional params &key payload)
+  "Send METHOD RESOURCE with PARAMS or PAYLOAD to the API of REPO.
+Wait for the answer and return a plist:
+  (:ok t :value VALUE :headers HEADERS) on success,
+  (:ok nil :status STATUS :payload PAYLOAD :headers HEADERS :message MSG)
+  on an HTTP or connection error, STATUS being nil for the latter.
+Signal a `user-error' when no answer arrives within
+`tether-request-timeout' seconds."
+  (let ((host (oref repo apihost)))
+    (tether--wait
+     host
+     (lambda (done)
+       (ghub-request method resource params
+                     :payload payload
+                     :host host
+                     :auth 'forge
+                     :forge (tether--forge-type repo)
+                     :callback (lambda (value headers &rest _)
+                                 (funcall done (list :ok t :value value
+                                                     :headers headers)))
+                     :errorback (lambda (err headers &rest _)
+                                  (funcall done (tether--error-result
+                                                 host err headers))))))))
+
+(defun tether--graphql-errors-text (errors)
+  "Return the messages of the GraphQL ERRORS, joined."
+  (mapconcat (lambda (e) (or (and (consp e) (alist-get 'message e))
+                             (format "%s" e)))
+             errors "; "))
+
+(defun tether--query-call (repo query &optional variables)
+  "Send the GraphQL QUERY with VARIABLES to REPO's API and wait.
+QUERY is in ghub's s-expression syntax (see `ghub-query').  Return
+\=(:ok t :value DATA) or (:ok nil :errors ERRORS :message MSG)."
+  (let ((host (oref repo apihost)))
+    (tether--wait
+     host
+     (lambda (done)
+       (ghub-query query variables
+         :host host
+         :auth 'forge
+         :forge (tether--forge-type repo)
+         :callback (lambda (value &rest _)
+                     (funcall done (list :ok t :value value)))
+         :errorback (lambda (errors headers &rest _)
+                      (funcall done
+                               (if (eq (car-safe errors) 'error)
+                                   (tether--error-result host errors headers)
+                                 (list :ok nil :errors errors
+                                       :message (format "Tether: %s: %s" host
+                                                        (tether--graphql-errors-text
+                                                         errors)))))))))))
+
+(defun tether--query (repo query &optional variables)
+  "Send the GraphQL QUERY with VARIABLES to REPO's API; return its data.
+Signal a `user-error' explaining the problem when it fails."
+  (let ((result (tether--query-call repo query variables)))
+    (if (plist-get result :ok)
+        (plist-get result :value)
+      (user-error "%s" (plist-get result :message)))))
 
 (cl-defun tether--request (repo method resource &optional params &key payload)
   "Send METHOD RESOURCE to the API of REPO and return the answer.
@@ -173,6 +224,48 @@ The value is a plist:
 
 (cl-defgeneric tether--pr-prefix (repo)
   "Return the character that prefixes PR numbers on REPO's forge.")
+
+(cl-defgeneric tether--post-comment (repo ctx target body)
+  "Post BODY on TARGET of the pull request of CTX on REPO.
+TARGET is a plist (SPEC.md §5.2):
+  :path      the file, as in the PR head;
+  :old-path  its path on the base side;
+  :start, :end  the first and last `tether-line', or nil for a
+             comment on the whole file;
+  :side      `right' (head) or `left' (base).
+Return a plist with :url, the comment's web page, and :message, what
+to tell the user.")
+
+(defun tether--compact (alist)
+  "Return ALIST without its entries whose value is nil.
+`ghub-request' would send nil as JSON false."
+  (seq-remove (lambda (entry) (null (cdr entry))) alist))
+
+(defun tether--target-label (target)
+  "Return how to name TARGET in messages, like a.el:42 or a.el:40-42."
+  (let* ((side (plist-get target :side))
+         (number (lambda (line)
+                   (if (eq side 'left) (tether-line-old line)
+                     (tether-line-new line))))
+         (start (plist-get target :start))
+         (end (plist-get target :end)))
+    (cond ((null end) (plist-get target :path))
+          ((eq start end)
+           (format "%s:%d" (plist-get target :path) (funcall number end)))
+          (t (format "%s:%d-%d" (plist-get target :path)
+                     (funcall number start) (funcall number end))))))
+
+(defun tether--rejected (service target result)
+  "Signal that SERVICE refused TARGET, as told by the failed RESULT.
+When the forge says the line is not in its diff, explain that its
+diff and git's can differ (SPEC.md §4.2); the caller keeps the text."
+  (let* ((text (or (tether--error-text (plist-get result :payload))
+                   (plist-get result :message)))
+         (diff-p (and (memq (plist-get result :status) '(400 422))
+                      (string-match-p "diff\\|line\\|position" text))))
+    (user-error "Tether: %s rejected %s: %s%s"
+                service (tether--target-label target) text
+                (if diff-p " (its diff and git's differ here)" ""))))
 
 (cl-defmethod tether--fetch-diff-refs ((repo forge-repository) _pullreq)
   "Signal that REPO's forge is not supported."
