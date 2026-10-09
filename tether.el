@@ -189,6 +189,7 @@ Uses the cached context only, so it never makes a request."
 For example: (keymap-set tether-mode-map \"C-c t\" tether-prefix-map)."
   "@" #'tether
   "c" #'tether-nitpick
+  "S" #'tether-suggest
   "F" #'tether-nitpick-file
   "f" #'tether-visit-file
   "d" #'tether-diff
@@ -220,6 +221,7 @@ modes, so bind `tether-prefix-map' where you like.")
   [:description tether--menu-description
    ["Comment"
     ("c" "line or region" tether-nitpick)
+    ("S" "suggest a change" tether-suggest)
     ("F" "whole file" tether-nitpick-file)]
    ["Go to"
     ("f" "file at line" tether-visit-file)

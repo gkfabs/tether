@@ -9,8 +9,8 @@ Built on [Forge](https://github.com/magit/forge): the repository, the pull
 request and the API token all come from Forge, so there is nothing extra to
 configure.
 
-**Status:** early development. Commenting and navigation work; review
-threads, the comment editor and draft reviews are still to come.
+**Status:** early development. Commenting, suggestions and navigation
+work; review threads and draft reviews are still to come.
 
 ## Requirements
 
@@ -39,6 +39,7 @@ The `tether` menu (`C-c t @` with the binding above, or `@` in
 | Key | Command | |
 |-----|---------|-|
 | `c` | `tether-nitpick` | comment on the current line or region |
+| `S` | `tether-suggest` | suggest a change of the line or region |
 | `F` | `tether-nitpick-file` | comment on the whole file |
 | `f` | `tether-visit-file` | the file at the line (the PR head's version when the PR is not checked out) |
 | `d` | `tether-diff` | the PR diff, at the hunk of the line |
@@ -47,6 +48,11 @@ The `tether` menu (`C-c t @` with the binding above, or `@` in
 | `m` | `tether-status` | magit-status |
 | `v` | `tether-review-pullreq` | pick any pull request and open its diff |
 | `s`, `g`, `x` | | show, refresh, forget what tether knows about the PR |
+
+Comments are written in a Markdown buffer showing the hunk for reference:
+`C-c C-c` sends, `C-c C-k` cancels, `C-c @` mentions someone, `C-c C-s`
+adds or removes a suggestion block, and `M-p`/`M-n` bring back text that
+was not sent. When posting fails, the buffer stays open and says why.
 
 A line can take a comment when it is in the pull request diff (a changed
 line, or one of the three lines around it), and has not changed locally

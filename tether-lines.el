@@ -97,6 +97,32 @@ does not change PATH."
       ('none (puthash path (tether--build-file-map ctx path) maps))
       (map map))))
 
+(defun tether-hunk-text (ctx path index)
+  "Return the text of hunk INDEX of PATH in CTX's diff, header included."
+  (when-let* ((entry (assoc path (tether--path-map ctx))))
+    (let ((default-directory (tether-context-toplevel ctx)))
+      (with-temp-buffer
+        (insert (apply #'tether--git-diff "-U3" "-M" (tether--range ctx) "--"
+                       (delete-dups (list (cadr entry) path))))
+        (goto-char (point-min))
+        (when (re-search-forward "^@@ " nil t (1+ index))
+          (let ((start (match-beginning 0)))
+            (buffer-substring-no-properties
+             start (if (re-search-forward "^@@ " nil t)
+                       (match-beginning 0)
+                     (point-max)))))))))
+
+(defun tether-head-lines (ctx path beg end)
+  "Return lines BEG to END of PATH as in CTX's PR head, as a string."
+  (let ((default-directory (tether-context-toplevel ctx)))
+    (with-temp-buffer
+      (magit-git-insert "show" (format "%s:%s" (tether-context-head-sha ctx) path))
+      (goto-char (point-min))
+      (forward-line (1- beg))
+      (let ((start (point)))
+        (forward-line (1+ (- end beg)))
+        (buffer-substring-no-properties start (point))))))
+
 ;;;; Buffer lines and head lines
 
 (defun tether--buffer-drift (file)

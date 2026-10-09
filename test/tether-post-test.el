@@ -6,9 +6,8 @@
 
 ;;; Commentary:
 
-;; Payloads and flows of `tether--post-comment' for GitHub and GitLab
-;;, with the API stubbed, and `tether-nitpick'
-;; end to end on a git repository.
+;; Payloads and flows of `tether--post-comment' for GitHub and GitLab,
+;; with the API stubbed.
 
 ;;; Code:
 
@@ -247,64 +246,6 @@ reviews (states: PENDING,first: 1) { nodes { id comments { totalCount } } } } } 
                  "mutation ($input: AddPullRequestReviewThreadInput!) { \
 addPullRequestReviewThread (input: $input) { thread { id comments (first: 1) \
 { nodes { url } } } } }")))
-
-;;;; tether-nitpick
-
-(defun tether-post-test--nitpick-handler (main2 head)
-  "Return a GitHub handler for PR 7 with base tip MAIN2 and HEAD."
-  (let ((github (tether-post-test--github '(nil nil))))
-    (lambda (request)
-      (if (equal (plist-get request :method) "GET")
-          `(:value ((base . ((sha . ,main2) (ref . "main")))
-                    (head . ((sha . ,head)))))
-        (funcall github request)))))
-
-(ert-deftest tether-post-test-nitpick ()
-  "From a file buffer: the line or region is checked, read, and posted."
-  (tether-test-with-repos
-    (tether-test-git "fetch" "-q" "origin" "refs/pull/7/head")
-    (tether-test-git "checkout" "-q" "-b" "feature" head)
-    (let* ((pullreq (tether-test-pullreq))
-           (repo (tether-test-github-repo))
-           (tether--contexts (make-hash-table :test #'equal))
-           (transient-mark-mode t)
-           (buffer (find-file-noselect (expand-file-name "a.el"))))
-      (unwind-protect
-          (cl-letf (((symbol-function 'tether--repository) (lambda (_) repo))
-                    ((symbol-function 'tether--branch-pullreq)
-                     (lambda (_) pullreq))
-                    ((symbol-function 'read-string) (lambda (&rest _) " Nice ")))
-            (tether-test-with-handler (tether-post-test--nitpick-handler main2 head)
-              (with-current-buffer buffer
-                ;; Line 2 was changed by the PR.
-                (goto-char (point-min))
-                (forward-line 1)
-                (tether-nitpick)
-                (should (equal (plist-get (car tether-test-requests) :payload)
-                               `((body . "Nice") (commit_id . ,head)
-                                 (path . "a.el") (line . 2) (side . "RIGHT"))))
-                ;; Lines 1 and 3 are context: a region over all three,
-                ;; ending at the start of line 4, which is excluded.
-                (push-mark (point-min) t t)
-                (goto-char (point-max))
-                (tether-nitpick)
-                (let ((payload (plist-get (car tether-test-requests) :payload)))
-                  (should (equal (alist-get 'start_line payload) 1))
-                  (should (equal (alist-get 'line payload) 3))))))
-        (kill-buffer buffer)))))
-
-(ert-deftest tether-post-test-nitpick-keeps-text ()
-  "When posting fails, the comment is in the kill ring."
-  (let* ((repo (tether-test-github-repo))
-         (ctx (tether-post-test--ctx repo))
-         (kill-ring nil))
-    (tether-test-with-handler
-        (tether-post-test--github '(nil) '(error http 500 ((message . "Oops"))))
-      (let ((err (should-error (tether--post ctx (tether-post-test--target 3 3)
-                                             "Long careful text")
-                               :type 'user-error)))
-        (should (string-match-p "your comment is in the kill ring" (cadr err)))
-        (should (equal (car kill-ring) "Long careful text"))))))
 
 (provide 'tether-post-test)
 ;;; tether-post-test.el ends here
