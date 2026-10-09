@@ -17,7 +17,9 @@
 (package-file "tether.el")
 (files "tether*.el")
 
-(script "test" "eask test ert test/*.el")
+(load-paths "test")
+
+(script "test" "eask test ert test/*-test.el")
 
 (defconst tether-eask-deps (or (getenv "TETHER_DEPS") "latest"))
 

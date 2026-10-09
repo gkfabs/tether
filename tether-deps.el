@@ -74,11 +74,12 @@
   "Variables tether reads or hooks into from magit, forge and ghub.")
 
 (defconst tether--external-classes
-  '((forge-repository owner name apihost githost remote pullreqs)
+  '((forge-repository id owner name apihost githost remote pullreqs)
     (forge-github-repository)
     (forge-gitlab-repository)
-    (forge-pullreq number state author base-ref head-ref base-rev head-rev
-                   head-repo their-id cross-repo-p locked-p))
+    (forge-pullreq id repository number title state author base-ref head-ref
+                   base-rev head-rev head-repo their-id cross-repo-p
+                   locked-p))
   "Classes tether dispatches on, each followed by the slots it reads.")
 
 (defconst tether--external-other

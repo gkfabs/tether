@@ -32,7 +32,7 @@ checkdoc:
 	$(EASK) lint checkdoc
 
 test:
-	$(EASK) test ert test/*.el
+	$(EASK) test ert test/*-test.el
 
 # Needs no dependency: tether-deps.el holds the allowlist.
 surface:
