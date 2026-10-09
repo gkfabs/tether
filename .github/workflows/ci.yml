@@ -1,0 +1,62 @@
+# SPEC.md §2.2: compile, lint and test against the oldest supported
+# dependencies (min) and the latest MELPA snapshots (latest), on each push
+# and weekly, so magit/forge/ghub changes are found before users do.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"  # Mondays 06:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        emacs-version: ["29.1", "30.2", "snapshot"]
+        deps: [min, latest]
+    env:
+      TETHER_DEPS: ${{ matrix.deps }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: purcell/setup-emacs@master
+        with:
+          version: ${{ matrix.emacs-version }}
+      - uses: emacs-eask/setup-eask@master
+        with:
+          version: snapshot
+      - run: make deps
+      - run: make compile
+      - run: make lint
+      - run: make surface
+      - run: make test
+
+  # A failed weekly run opens an issue (or comments on the open one).
+  report:
+    needs: test
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - run: |
+          title="Weekly CI failed: magit/forge/ghub may have changed"
+          body="The weekly run against the latest dependencies failed: $RUN_URL"
+          number=$(gh issue list --state open --search "$title in:title" \
+                     --json number --jq '.[0].number')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi

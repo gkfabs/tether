@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+<title>DESIGN-file-buffer-review.html</title>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8"/>
+
+</head>
+
+<body>
+
+<h1>Commenting on PRs/MRs from the file buffer — design notes</h1>
+
+<h2>Problems with the current code-review fork</h2>
+
+<ol>
+<li><strong>Token lookup</strong> — ghub looks for <code>&lt;user&gt;^code-review</code> on <code>machine gitlab.com</code>
+(<code>ghub--token</code>). The forge token (<code>&lt;user&gt;^forge</code>, often on <code>gitlab.com/api/v4</code>)
+is not reused, so users must configure a second <code>.authinfo</code> entry.</li>
+<li><strong>403 / Cloudflare challenge</strong> — <code>code-review-gitlab--normalize-request</code>
+dropped <code>:host</code>, relying on ghub's default GitLab host being the API root.
+ghub <code>20260902</code> changed <code>ghub-default-host-alist</code> to <code>(gitlab . "gitlab.com")</code>,
+so requests hit the web UI (<code>https://gitlab.com/projects/...</code>) instead of the
+API. Fixed by passing <code>:host "gitlab.com/api/v4"</code> explicitly.</li>
+<li><strong>Fragility</strong> — the package depends on ghub/forge internals (default hosts,
+token naming, request args); each update of forge/magit/ghub can break it.</li>
+<li><strong>UX</strong> — reviewing happens in a dedicated diff buffer; you cannot stay in the
+file you are reading and just comment.</li>
+</ol>
+
+<h2>Existing packages</h2>
+
+<ul>
+<li><a href="https://github.com/blahgeek/emacs-pr-review">emacs-pr-review</a> — GitHub and
+GitLab (GitLab marked "experimental"); comments from its own review buffer;
+no forge integration mentioned.</li>
+<li><a href="https://github.com/wandersoncferreira/code-review">code-review</a> — upstream of
+this fork; diff-buffer based.</li>
+<li><a href="https://github.com/charignon/github-review">github-review</a> — GitHub only;
+diff-buffer based.</li>
+</ul>
+
+<p>None lets you comment from the normal file buffer.</p>
+
+<h2>Proposed design: a small forge extension</h2>
+
+<ul>
+<li><strong>Comment where you are</strong>: a command that comments on the current line/region
+of a file buffer, plus the same command in magit diff buffers.</li>
+<li><strong>See existing threads in place</strong>: show review threads on the file at their
+lines (overlays or margin marker), reply/resolve from there.</li>
+<li><strong>Draft review then submit</strong>:
+<ul>
+<li>GitHub: pending review via GraphQL (<code>addPullRequestReviewThread</code>, then submit).</li>
+<li>GitLab: <code>draft_notes</code> API, then <code>bulk_publish</code>.</li>
+</ul></li>
+<li><strong>Built on forge</strong>:
+<ul>
+<li>resolve the repository and the PR of the current branch through forge;</li>
+<li>send requests with ghub, reusing the forge token (fixes problem 1);</li>
+<li>dispatch per forge with <code>cl-defmethod</code> on forge's GitHub/GitLab repository
+classes, like forge does (Forgejo can come later);</li>
+<li>add an entry to forge's transient dispatch.</li>
+</ul></li>
+<li><strong>Line validation</strong>: both APIs only accept comments on lines in the PR diff.
+Compute the diff locally (base...head via magit), mark commentable lines in
+the fringe, fail early otherwise. Warn when <code>HEAD</code> is not the PR head commit,
+since line numbers would not match.</li>
+<li><strong>Out of scope</strong>: permalinks and blame (<code>git-link</code>, <code>blamer</code> do that well).</li>
+</ul>
+
+<h2>MELPA requirements</h2>
+
+<ul>
+<li>Unique prefix (not <code>forge-</code>, not <code>my/</code>).</li>
+<li>Clean <code>package-lint</code>, <code>checkdoc</code>, byte-compile without warnings.</li>
+<li>GPL-compatible license.</li>
+<li><code>Package-Requires</code> on emacs, magit, forge.</li>
+<li>ERT tests for the line → diff mapping, using fixture diffs.</li>
+</ul>
+
+<h2>Main risk</h2>
+
+<p>forge internals move often; this is what keeps breaking code-review. Depend on
+as few forge functions as possible — identifying which ones are stable is the
+first task.</p>
+
+<h2>MVP</h2>
+
+<p>Comment on a line/region from a file buffer (<code>tether-nitpick</code>), GitHub +
+GitLab, posted directly (no drafts), <strong>plus the navigation transient</strong> (jump
+matrix below). Then: inline threads, then draft reviews.</p>
+
+<h2>Name</h2>
+
+<p><strong><code>tether</code></strong> (prefix <code>tether-</code>): ties the code you are reading to its MR —
+comments, diff and topic stay one keystroke away. Navigation is the core of the
+package, so the name is about that, not only commenting.</p>
+
+<ul>
+<li>Commenting command: <code>tether-nitpick</code>.</li>
+<li>No recipe in <code>melpa/melpa/recipes</code> (checked 2026-10-06). Still to check:
+GNU ELPA and NonGNU ELPA.</li>
+<li>Alternatives (also free on MELPA): <code>waypoint</code>, <code>junction</code>, <code>wayfinder</code>.</li>
+</ul>
+
+<h2>Navigation</h2>
+
+<h3>Review context</h3>
+
+<p>One object per repo, resolved once and cached: forge repo, pullreq, base/head
+SHAs, diff line map, fetched threads. Every view reaches it the same way, so
+every jump is symmetric.</p>
+
+<ul>
+<li>File buffer: <code>forge-get-pullreq :branch</code> (reads <code>branch.&lt;name&gt;.pullRequest</code>,
+set by <code>forge-checkout-pullreq</code>).</li>
+<li>forge/magit buffers: <code>forge-current-pullreq</code>.</li>
+<li>Do <strong>not</strong> use <code>forge--pullreq-range</code> / <code>forge--pullreq-ref</code> (internal).
+Build <code>base...head</code> from public slots (<code>base-ref</code>, <code>head-ref</code>, <code>base-rev</code>)
+and <code>magit-rev-verify</code>.</li>
+</ul>
+
+<h3><code>tether-mode</code></h3>
+
+<ul>
+<li>Global minor mode, active in file buffers of a repo whose current branch has
+a PR.</li>
+<li>Mode-line lighter <code>!123 ·4</code> (PR number, open threads).</li>
+<li>Prefix key opens the <code>tether</code> transient; the same transient is appended to
+<code>forge-dispatch</code> and <code>magit-dispatch</code>.</li>
+</ul>
+
+<h3>Jump matrix</h3>
+
+<p>Every view reaches every other one, keeping file + line where it makes sense.</p>
+
+<p>| From \ To      | File (at line)                   | PR diff (at hunk)        | Forge topic           | Thread list | Browser (at line)      | magit-status   |
+|----------------|----------------------------------|--------------------------|-----------------------|-------------|------------------------|----------------|
+| File buffer    | —                                | own: line map → hunk     | <code>forge-visit-pullreq</code> | own         | own URL builder        | <code>magit-status</code> |
+| PR diff        | <code>magit-diff-visit-worktree-file</code> | —                        | <code>forge-visit-pullreq</code> | own         | own                    | <code>magit-status</code> |
+| Forge topic    | via thread list                  | <code>magit-diff-range</code>       | —                     | own         | <code>forge-browse-pullreq</code> | <code>magit-status</code> |
+| Thread list    | <code>RET</code>                            | <code>d</code>                      | <code>t</code>                   | —           | <code>b</code>                    | <code>s</code>            |</p>
+
+<ul>
+<li><strong>Thread list</strong> (magit-section, grouped by file): the review hub. Forge's
+topic buffer does not show line-level review threads.</li>
+<li><strong>In the file</strong>: <code>n</code>/<code>p</code> to next/previous thread or commentable hunk;
+threads as overlays or margin markers; <code>RET</code> shows the thread, reply/resolve.</li>
+<li><strong>Browser URL at line</strong>:
+<ul>
+<li>GitLab: <code>…/merge_requests/N/diffs#&lt;sha1(path)&gt;_&lt;old&gt;_&lt;new&gt;</code></li>
+<li>GitHub: <code>…/pull/N/files#diff-&lt;sha256(path)&gt;R&lt;line&gt;</code></li>
+</ul></li>
+<li><strong>File → diff at hunk</strong>: reuse the line map; <code>magit-diff-range base...head --
+file</code>, then walk <code>hunk</code> sections to the one containing the line. Not
+<code>magit-diff-visit--position</code> (internal).</li>
+</ul>
+
+<h2>Coverage vs code-review</h2>
+
+<h3>Needed, reuse the idea</h3>
+
+<p>| code-review feature                                  | Where                                       | In tether                                                    |
+|------------------------------------------------------|---------------------------------------------|--------------------------------------------------------------|
+| Comment editor (markdown, <code>C-c C-c</code>/<code>C-c C-k</code>, <code>C-c @</code>) | <code>code-review-comment.el</code>                    | buffer opened by <code>tether-nitpick</code>, no emojify                |
+| Code suggestions                                     | <code>code-review-comment.el</code>                    | region prefilled into a <code>```suggestion</code> block        |
+| Outdated comments with original hunk                 | <code>code-review-section.el</code>                    | thread list shows them with the stored hunk, not in the file |
+| Approve / request changes / LGTM                     | <code>code-review-actions.el</code> (<code>code-review-submit-*</code>) | verdict when submitting a draft review; GitLab approve is a separate endpoint |
+| Review a single commit                               | <code>code-review-commit-diff</code>                   | line map on <code>sha^..sha</code>, comments target that commit         |
+| Start from URL                                       | <code>code-review-start</code>                         | <code>forge-visit-topic-from-url</code>, then resolve the context       |</p>
+
+<h3>Left to forge</h3>
+
+<p>Labels, assignees, milestone, title, description (<code>forge-topic-menu</code>), merge
+(<code>forge-merge</code>), open the PR (<code>forge-visit-pullreq</code>). The tether transient only
+links to them.</p>
+
+<h3>Dropped</h3>
+
+<p>Bitbucket, reactions/emojify, promote comment to issue, binary files, local
+save/resume of reviews (server-side drafts replace it), dependencies on
+<code>deferred</code>, <code>a</code>, <code>uuidgen</code>, <code>closql</code> DB.</p>
+
+<h2>Estimate</h2>
+
+<p>One developer who knows Emacs Lisp and forge, in days.</p>
+
+<p>| #  | Item                                                                  | Days    | Reuse                                         |
+|----|-----------------------------------------------------------------------|---------|-----------------------------------------------|
+| 1  | Skeleton, <code>package-lint</code>, <code>checkdoc</code>, CI, Makefile                    | 0.5–1   | <code>Makefile</code>, <code>Cask</code>                            |
+| 2  | Review context: PR from branch, SHAs, HEAD ≠ PR head warning, cache   | 1–1.5   | forge public API                              |
+| 3  | Diff line map + ERT fixture tests                                     | 1–2     | <code>code-review-parse-hunk.el</code>                   |
+| 4  | Post line/region comment (GitLab <code>position</code>/diff_refs, GitHub)        | 2–3     | <code>code-review-gitlab.el</code>, <code>-github.el</code>, e0ec8a1 |
+| 5  | Navigation: <code>tether-mode</code>, transient, jump matrix, URL builders       | 2–3     | magit/forge commands                          |
+| 6  | Comment editor + suggestions                                          | 1–1.5   | <code>code-review-comment.el</code>                      |
+| —  | <strong>MVP (1–6)</strong>                                                         | <strong>8–12</strong> |                                              |
+| 7  | Fetch threads, overlays/margin, thread list, <code>n</code>/<code>p</code>                  | 3–5     |                                               |
+| 8  | Outdated threads in the list                                          | 1–2     | <code>code-review-section.el</code>                      |
+| 9  | Reply / resolve                                                       | 1–2     |                                               |
+| 10 | Draft reviews + verdict (approve / request changes)                   | 2.5–4   |                                               |
+| 11 | Single-commit review                                                  | 1       |                                               |
+| 12 | Docs, MELPA recipe, review round-trips                                | 1–2     |                                               |
+| —  | <strong>Total</strong>                                                             | <strong>18–28</strong> |                                             |</p>
+
+<p>Risks that push it up:</p>
+
+<ul>
+<li>forge API drift — keep the list of forge symbols used (all public) in this
+doc.</li>
+<li>GitLab <code>position</code> edge cases: renamed files, old-side-only lines.</li>
+<li>Line drift when the worktree differs from the PR head.</li>
+</ul>
+
+</body>
+</html>
