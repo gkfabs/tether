@@ -45,7 +45,18 @@
    (source-priority "gnu" 10)
    (source-priority "nongnu" 10)
    (source-priority "melpa" 0)
-   ;; `package-vc-install' at a release tag.
+   ;; `package-vc-install' at a release tag.  On Emacs 30 it also
+   ;; registers the checkout as a project, which fails when
+   ;; ~/.emacs.d does not exist, as on CI runners.
+   (setq package-vc-register-as-project nil)
+   ;; Emacs 29.1's `package-vc-install' compiles a package before
+   ;; installing its dependencies, so install ghub's and forge's first.
+   (depends-on "cond-let")
+   (depends-on "llama")
+   (depends-on "treepy")
+   (depends-on "closql")
+   (depends-on "emacsql")
+   (depends-on "yaml")
    (depends-on "ghub" :vc '(ghub :url "https://github.com/magit/ghub"
                                  :lisp-dir "lisp")
                "v5.3.0")              ; 2026-08-01

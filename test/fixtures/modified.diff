@@ -1,0 +1,35 @@
+diff --git a/mod.txt b/mod.txt
+index e8823e1..fdd0e51 100644
+--- a/mod.txt
++++ b/mod.txt
+@@ -1,19 +1,19 @@
+ 1
+ 2
+-3
++THREE
+ 4
+ 5
+ 6
+ 7
+ 8
+ 9
+-10
+ 11
+ 12
+ 13
+ 14
+ 15
+ 16
++inserted
+ 17
+ 18
+ 19
+@@ -22,7 +22,7 @@
+ 22
+ 23
+ 24
+-25
++TWENTYFIVE
+ 26
+ 27
+ 28

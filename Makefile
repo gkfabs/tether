@@ -19,9 +19,13 @@ deps:
 	$(EASK) install-deps --dev
 	@echo $(TETHER_DEPS) > .eask/deps-set
 
+# Warnings are errors for tether's code only.  (`eask compile --strict'
+# would also fail on Eask's metadata warnings about the extra
+# dependencies of the min set.)
 compile:
-	$(EASK) compile --strict
-	$(EASK) clean elc
+	$(EASK) emacs --batch -L . --eval "(setq byte-compile-error-on-warn t)" \
+	  -f batch-byte-compile tether*.el
+	rm -f *.elc
 
 lint: package-lint checkdoc
 

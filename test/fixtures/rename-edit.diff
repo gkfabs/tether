@@ -1,0 +1,16 @@
+diff --git a/renamed-edit.txt b/moved-edit.txt
+similarity index 92%
+rename from renamed-edit.txt
+rename to moved-edit.txt
+index 0ff3bbb..694af38 100644
+--- a/renamed-edit.txt
++++ b/moved-edit.txt
+@@ -7,7 +7,7 @@
+ 7
+ 8
+ 9
+-10
++TEN
+ 11
+ 12
+ 13

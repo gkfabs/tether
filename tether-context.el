@@ -207,7 +207,7 @@ from %s? " label remote)))
         (dolist (sha needed)
           (unless (tether--commit-p sha)
             (magit-call-git "fetch" remote sha)))
-        (when-let ((missing (seq-remove #'tether--commit-p needed)))
+        (when-let* ((missing (seq-remove #'tether--commit-p needed)))
           (user-error "Tether: commit %s of %s is not reachable on %s; \
 run `forge-pull' and retry" (substring (car missing) 0 7) label remote))))))
 
@@ -314,7 +314,7 @@ CHECKED-OUT is non-nil when PULLREQ is the current branch's."
         cached
       (let ((ctx (tether--build-context repo pullreq toplevel checked-out)))
         (puthash key ctx tether--contexts)
-        (when-let ((notes (tether--notes ctx)))
+        (when-let* ((notes (tether--notes ctx)))
           (message "Tether: %s" (string-join notes "; ")))
         ctx))))
 

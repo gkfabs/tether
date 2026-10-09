@@ -1,0 +1,4 @@
+diff --git a/renamed-only.txt b/moved-only.txt
+similarity index 100%
+rename from renamed-only.txt
+rename to moved-only.txt
