@@ -130,7 +130,7 @@ Return nil for a discussion that is not on a line of the diff."
            :resolved (alist-get 'resolved first)
            :comments (mapcar (lambda (note)
                                (let-alist note
-                                 (list :author .author.username
+                                 (list :id .id :author .author.username
                                        :created .created_at :body .body
                                        :url (tether-gitlab--note-url
                                              repo number .id))))
@@ -151,6 +151,51 @@ Return nil for a discussion that is not on a line of the diff."
                                                      (plist-get result :value))))
                   result)))
      :unpaginate t)))
+
+(defun tether-gitlab--refused (result what)
+  "Signal that GitLab refused to do WHAT, as told by the failed RESULT."
+  (user-error "Tether: GitLab refused to %s: %s" what
+              (or (tether--error-text (plist-get result :payload))
+                  (plist-get result :message))))
+
+(cl-defmethod tether--reply ((repo forge-gitlab-repository) ctx thread body)
+  "Post BODY in THREAD of CTX's merge request on GitLab REPO."
+  (let* ((number (oref (tether-context-pullreq ctx) number))
+         (result (tether--call
+                  repo "POST"
+                  (tether-gitlab--merge-request
+                   repo number (format "/discussions/%s/notes" (tether-thread-id thread)))
+                  nil :payload `((body . ,body)))))
+    (unless (plist-get result :ok)
+      (tether-gitlab--refused result "reply"))
+    (list :url (tether-gitlab--note-url repo number
+                                        (alist-get 'id (plist-get result :value)))
+          :message (format "replied on %s (!%d)" (tether--thread-label thread)
+                           number))))
+
+(cl-defmethod tether--set-resolved ((repo forge-gitlab-repository) ctx thread resolved)
+  "Resolve THREAD of CTX's merge request on GitLab REPO, or reopen it.
+RESOLVED says which."
+  (let ((result (tether--call
+                 repo "PUT"
+                 (tether-gitlab--merge-request
+                  repo (oref (tether-context-pullreq ctx) number)
+                  (format "/discussions/%s" (tether-thread-id thread)))
+                 ;; nil is sent as JSON false.
+                 nil :payload `((resolved . ,(and resolved t))))))
+    (unless (plist-get result :ok)
+      (tether-gitlab--refused result (if resolved "resolve the thread"
+                                       "reopen the thread")))))
+
+(cl-defmethod tether--delete-comment ((repo forge-gitlab-repository) ctx comment)
+  "Delete COMMENT of CTX's merge request on GitLab REPO."
+  (let ((result (tether--call
+                 repo "DELETE"
+                 (tether-gitlab--merge-request
+                  repo (oref (tether-context-pullreq ctx) number)
+                  (format "/notes/%s" (plist-get comment :id))))))
+    (unless (plist-get result :ok)
+      (tether-gitlab--refused result "delete the comment"))))
 
 (cl-defmethod tether--pullreq-ref ((_repo forge-gitlab-repository) number)
   "Return GitLab's ref for the head of merge request NUMBER."

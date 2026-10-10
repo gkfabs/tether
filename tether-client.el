@@ -232,7 +232,19 @@ PARAMS and PAYLOAD are passed to `ghub-request'.  Signal a
   head-sha      ; commit LINE is on, when the forge says (GitLab); else nil
   original-line original-sha diff-hunk  ; where it was written
   resolved outdated
-  comments)     ; list of plists (:author :created :body :url)
+  comments)     ; list of plists (:id :author :created :body :url)
+
+(cl-defgeneric tether--reply (repo ctx thread body)
+  "Post BODY as a reply in THREAD of CTX's pull request on REPO.
+Return a plist with :url and :message, like `tether--post-comment'.")
+
+(cl-defgeneric tether--set-resolved (repo ctx thread resolved)
+  "Resolve THREAD of CTX's pull request on REPO, or reopen it.
+RESOLVED says which.  Signal a `user-error' when the forge refuses.")
+
+(cl-defgeneric tether--delete-comment (repo ctx comment)
+  "Delete COMMENT, a plist of a `tether-thread', of CTX's PR on REPO.
+Signal a `user-error' when the forge refuses.")
 
 (cl-defgeneric tether--fetch-threads (repo ctx done)
   "Fetch the review threads of CTX's pull request on REPO, asynchronously.
@@ -272,8 +284,22 @@ to tell the user.")
 `ghub-request' would send nil as JSON false."
   (seq-remove (lambda (entry) (null (cdr entry))) alist))
 
+(defun tether--thread-label (thread)
+  "Return how to name THREAD in messages, like a.el:42."
+  (if (tether-thread-line thread)
+      (format "%s:%d%s" (tether-thread-path thread) (tether-thread-line thread)
+              (if (eq (tether-thread-side thread) 'left) " (removed)" ""))
+    (format "%s (outdated)" (tether-thread-path thread))))
+
 (defun tether--target-label (target)
-  "Return how to name TARGET in messages, like a.el:42 or a.el:40-42."
+  "Return how to name TARGET in messages, like a.el:42 or a.el:40-42.
+A reply's target names its thread."
+  (if-let* ((thread (plist-get target :thread)))
+      (concat "reply on " (tether--thread-label thread))
+    (tether--target-label-1 target)))
+
+(defun tether--target-label-1 (target)
+  "Return how to name TARGET, a line, region or file, in messages."
   (let* ((side (plist-get target :side))
          (number (lambda (line)
                    (if (eq side 'left) (tether-line-old line)

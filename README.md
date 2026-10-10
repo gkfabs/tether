@@ -10,7 +10,7 @@ request and the API token all come from Forge, so there is nothing extra to
 configure.
 
 **Status:** early development. Commenting, suggestions, navigation and
-review threads work; replying, resolving and draft reviews are to come.
+review threads (reply, resolve, delete) work; draft reviews are to come.
 
 ## Requirements
 
@@ -49,6 +49,9 @@ The `tether` menu (`C-c t @` with the binding above, or `@` in
 | `v` | `tether-review-pullreq` | pick any pull request and open its diff |
 | `l` | `tether-threads` | the review threads, by file |
 | `.` | `tether-show-thread` | the thread of the current line, in full |
+| `r` | `tether-reply` | reply in the thread at point |
+| `R` | `tether-resolve` | resolve the thread at point, or reopen it |
+| `k` | `tether-delete-comment` | delete one of your comments, after confirmation |
 | `n`, `p` | `tether-next-thread`, `tether-previous-thread` | go from thread to thread, across files |
 | `s`, `g`, `x` | | show, refresh, forget what tether knows about the PR |
 

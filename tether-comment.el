@@ -212,6 +212,18 @@ is for reference and is not sent.
               (substring (tether-context-head-sha ctx) 0 7))))))
 
 (defun tether-comment--insert-reference (ctx target)
+  "Insert the hunk of TARGET in CTX's diff, read-only, below the text.
+For a reply, insert the discussion instead."
+  (if-let* ((thread (plist-get target :thread)))
+      (save-excursion
+        (goto-char (point-max))
+        (let ((start (point)))
+          (insert "\n-- Not sent: the discussion, for reference --\n")
+          (tether-threads--insert-comments thread)
+          (add-text-properties start (point) '(tether-reference t read-only t))))
+    (tether-comment--insert-hunk ctx target)))
+
+(defun tether-comment--insert-hunk (ctx target)
   "Insert the hunk of TARGET in CTX's diff, read-only, below the text."
   (when-let* ((end (plist-get target :end))
               (hunk (tether-hunk-text ctx (plist-get target :path)
@@ -280,8 +292,11 @@ When posting fails the editor stays open, saying why."
                (target (if (eq ctx tether-comment--ctx)
                            tether-comment--target
                          (funcall tether-comment--retarget ctx)))
-               (result (tether--post-comment (tether-context-repo ctx) ctx
-                                             target body)))
+               (thread (plist-get target :thread))
+               (result (if thread
+                           (tether--reply (tether-context-repo ctx) ctx thread body)
+                         (tether--post-comment (tether-context-repo ctx) ctx
+                                               target body))))
           (setq tether-comment--sent t)
           (tether-comment--close)
           (tether-fetch-threads ctx)
@@ -418,6 +433,16 @@ block of the lines, to edit into the proposed text.  With prefix
 argument PICK, choose the pull request."
   (interactive "P")
   (tether--start-comment pick t))
+
+;;;###autoload
+(defun tether-reply ()
+  "Reply in the review thread at point.
+On a line with a thread, in the thread list or in `tether-show-thread'.
+The reply is written in the comment editor, the discussion below."
+  (interactive)
+  (let* ((ctx (tether--threads-ctx))
+         (target (list :thread (tether--thread-at-point-or-error ctx))))
+    (tether--edit-comment ctx target (lambda (_) target))))
 
 ;;;###autoload
 (defun tether-nitpick-file (&optional pick)

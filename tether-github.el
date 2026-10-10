@@ -159,7 +159,7 @@ so the comment goes into that review instead."
                                                   id isResolved isOutdated path line
                                                   startLine originalLine diffSide
                                                   (comments [(:edges t)]
-                                                            body createdAt url diffHunk
+                                                            id body createdAt url diffHunk
                                                             (author login)
                                                             (originalCommit oid))))))
   "The review threads of a pull request, every page of them.")
@@ -179,8 +179,8 @@ so the comment goes into that review instead."
        :outdated .isOutdated
        :comments (mapcar (lambda (comment)
                            (let-alist comment
-                             (list :author .author.login :created .createdAt
-                                   :body .body :url .url)))
+                             (list :id .id :author .author.login
+                                   :created .createdAt :body .body :url .url)))
                          comments)))))
 
 (cl-defmethod tether--fetch-threads ((repo forge-github-repository) ctx done)
@@ -197,6 +197,58 @@ so the comment goes into that review instead."
                     (list :ok t :threads (mapcar #'tether-github--thread
                                                  .repository.pullRequest.reviewThreads)))
                 result)))))
+
+(defconst tether-github--reply-mutation
+  '(mutation (addPullRequestReviewThreadReply
+              [(input $input AddPullRequestReviewThreadReplyInput!)]
+              (comment url)))
+  "Reply in a review thread.")
+
+(defun tether-github--resolve-mutation (resolved)
+  "Return the mutation resolving a thread, or reopening it unless RESOLVED."
+  (if resolved
+      '(mutation (resolveReviewThread [(input $input ResolveReviewThreadInput!)]
+                                      (thread id isResolved)))
+    '(mutation (unresolveReviewThread [(input $input UnresolveReviewThreadInput!)]
+                                      (thread id isResolved)))))
+
+(defconst tether-github--delete-mutation
+  '(mutation (deletePullRequestReviewComment
+              [(input $input DeletePullRequestReviewCommentInput!)]
+              clientMutationId))
+  "Delete a review comment.")
+
+(defun tether-github--mutate (repo mutation input what)
+  "Send MUTATION with INPUT to GitHub REPO; return its data.
+WHAT names the action in the error saying GitHub refused it."
+  (let ((result (tether--query-call repo mutation `((input . ,input)))))
+    (unless (plist-get result :ok)
+      (user-error "Tether: GitHub refused to %s: %s" what
+                  (plist-get result :message)))
+    (plist-get result :value)))
+
+(cl-defmethod tether--reply ((repo forge-github-repository) ctx thread body)
+  "Post BODY in THREAD of CTX's pull request on GitHub REPO."
+  (let-alist (tether-github--mutate
+              repo tether-github--reply-mutation
+              `((pullRequestReviewThreadId . ,(tether-thread-id thread))
+                (body . ,body))
+              "reply")
+    (list :url .addPullRequestReviewThreadReply.comment.url
+          :message (format "replied on %s (#%d)" (tether--thread-label thread)
+                           (oref (tether-context-pullreq ctx) number)))))
+
+(cl-defmethod tether--set-resolved ((repo forge-github-repository) _ctx thread resolved)
+  "Resolve THREAD on GitHub REPO, or reopen it unless RESOLVED."
+  (tether-github--mutate repo (tether-github--resolve-mutation resolved)
+                         `((threadId . ,(tether-thread-id thread)))
+                         (if resolved "resolve the thread" "reopen the thread")))
+
+(cl-defmethod tether--delete-comment ((repo forge-github-repository) _ctx comment)
+  "Delete COMMENT on GitHub REPO."
+  (tether-github--mutate repo tether-github--delete-mutation
+                         `((id . ,(plist-get comment :id)))
+                         "delete the comment"))
 
 (cl-defmethod tether--pullreq-ref ((_repo forge-github-repository) number)
   "Return GitHub's ref for the head of pull request NUMBER."

@@ -211,6 +211,9 @@ For example: (keymap-set tether-mode-map \"C-c t\" tether-prefix-map)."
   "c" #'tether-nitpick
   "l" #'tether-threads
   "." #'tether-show-thread
+  "r" #'tether-reply
+  "R" #'tether-resolve
+  "k" #'tether-delete-comment
   "n" #'tether-next-thread
   "p" #'tether-previous-thread
   "S" #'tether-suggest
@@ -256,6 +259,9 @@ modes, so bind `tether-prefix-map' where you like.")
    ["Threads"
     ("l" "list" tether-threads)
     ("." "this line's thread" tether-show-thread)
+    ("r" "reply" tether-reply)
+    ("R" "resolve / reopen" tether-resolve)
+    ("k" "delete a comment" tether-delete-comment)
     ("n" "next" tether-next-thread :transient t)
     ("p" "previous" tether-previous-thread :transient t)]
    ["Pull request"
