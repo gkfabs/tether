@@ -31,8 +31,9 @@
 (require 'tether-lines)
 (require 'tether-nav)
 
-(defcustom tether-show-resolved nil
-  "Whether to show resolved threads in file buffers."
+(defcustom tether-show-resolved t
+  "Whether to show resolved threads in file buffers, dimmed.
+`tether-toggle-resolved' switches it."
   :type 'boolean
   :group 'tether)
 
@@ -381,32 +382,22 @@ fetches the threads again.
     buffer))
 
 (declare-function tether-reply "tether-comment")
+(declare-function tether-show-thread "tether-comment")
 
 (defun tether--threads-arrived (ctx)
-  "Show the threads of CTX in its thread list and thread window, if open."
+  "Show the threads of CTX in its thread list, if open."
   (dolist (buffer (buffer-list))
     (with-current-buffer buffer
-      (cond
-       ((and (derived-mode-p 'tether-threads-mode)
-             tether-threads--ctx
-             (equal (tether--context-key tether-threads--ctx)
-                    (tether--context-key ctx)))
+      (when (and (derived-mode-p 'tether-threads-mode)
+                 tether-threads--ctx
+                 (equal (tether--context-key tether-threads--ctx)
+                        (tether--context-key ctx)))
         (setq tether-threads--ctx ctx)
-        (tether-threads--render))
-       ((and (derived-mode-p 'tether-thread-mode)
-             tether-thread--ctx
-             (equal (tether--context-key tether-thread--ctx)
-                    (tether--context-key ctx)))
-        (when-let* ((thread (seq-find
-                             (lambda (th) (equal (tether-thread-id th)
-                                                 (tether-thread-id tether-thread--thread)))
-                             (tether-context-threads ctx))))
-          (tether-thread--render ctx thread)))))))
+        (tether-threads--render)))))
 
 (add-hook 'tether-threads-functions #'tether--threads-arrived)
 
-;; `tether-review-url' shows the thread a comment link points to.
-(setq tether--url-thread-hook #'tether--display-thread)
+
 
 ;;;###autoload
 (defun tether-threads (&optional pick)
@@ -479,54 +470,23 @@ PICK, choose the pull request."
 
 ;;;; One thread
 
-(defvar-local tether-thread--ctx nil
-  "Review context of the thread shown.")
-
-(defvar-local tether-thread--thread nil
-  "The thread shown.")
-
-(defvar-keymap tether-thread-mode-map
-  :parent special-mode-map
-  "r" #'tether-reply
-  "R" #'tether-resolve
-  "k" #'tether-delete-comment)
-
-(define-derived-mode tether-thread-mode special-mode "Tether-Thread"
-  "One review thread, every comment in full.
-\\<tether-thread-mode-map>\\[tether-reply] replies, \\[tether-resolve] \
-resolves or reopens it, \\[tether-delete-comment] deletes a comment, \
-\\[quit-window] closes it."
-  (visual-line-mode 1))
-
-(defun tether-thread--render (ctx thread)
-  "Show THREAD of CTX in the current buffer."
-  (setq tether-thread--ctx ctx
-        tether-thread--thread thread)
-  (let ((inhibit-read-only t)
-        (count (length (tether-thread-comments thread))))
-    (erase-buffer)
-    (insert (propertize
-             (format "%s %s  %d comment%s%s\n\n"
-                     (tether--label (tether-context-repo ctx)
-                                    (oref (tether-context-pullreq ctx) number))
-                     (tether--thread-label thread)
-                     count (if (= count 1) "" "s")
-                     (if (tether-thread-resolved thread) "  resolved" ""))
-             'font-lock-face 'bold))
-    (tether-threads--insert-comments thread)
-    (goto-char (point-min))))
+(defvar tether-comment--ctx)
+(defvar tether-comment--target)
 
 (defun tether--threads-ctx ()
   "Return the review context of the current buffer, for thread commands."
   (cond ((and (derived-mode-p 'tether-threads-mode) tether-threads--ctx))
-        ((and (derived-mode-p 'tether-thread-mode) tether-thread--ctx))
+        ((and (derived-mode-p 'tether-comment-mode)
+              (plist-get tether-comment--target :thread))
+         tether-comment--ctx)
         (t (tether-context t))))
 
 (defun tether--thread-at-point (ctx)
   "Return CTX's review thread at point, or nil.
 In the thread list, the thread at point; elsewhere, the thread on the
 current line."
-  (or (and (derived-mode-p 'tether-thread-mode) tether-thread--thread)
+  (or (and (derived-mode-p 'tether-comment-mode)
+           (plist-get tether-comment--target :thread))
       (and (derived-mode-p 'tether-threads-mode) (tether-threads--at-point))
       (seq-some (lambda (overlay) (overlay-get overlay 'tether-thread))
                 (overlays-in (line-beginning-position) (line-end-position)))
@@ -543,6 +503,19 @@ current line."
       (user-error "Tether: no review thread on this line%s"
                   (if (eq (tether-context-threads-state ctx) 'done)
                       "" " (threads still fetching)"))))
+
+(declare-function tether--refresh-buffer "tether")
+
+;;;###autoload
+(defun tether-toggle-resolved ()
+  "Show or hide resolved review threads in file buffers."
+  (interactive)
+  (setq tether-show-resolved (not tether-show-resolved))
+  (dolist (buffer (buffer-list))
+    (with-current-buffer buffer
+      (when (bound-and-true-p tether-mode)
+        (tether--refresh-buffer))))
+  (message "Tether: resolved threads %s" (if tether-show-resolved "shown" "hidden")))
 
 ;;;###autoload
 (defun tether-resolve ()
@@ -586,24 +559,6 @@ your own."
       (tether--delete-comment (tether-context-repo ctx) ctx comment)
       (message "Tether: comment deleted")
       (tether-fetch-threads ctx))))
-
-;;;###autoload
-(defun tether-show-thread ()
-  "Show the review thread of the current line, every comment in full.
-It opens below; \\<tether-thread-mode-map>\\[quit-window] there \
-closes it and comes back."
-  (interactive)
-  (let ((ctx (tether--threads-ctx)))
-    (tether--display-thread ctx (tether--thread-at-point-or-error ctx))))
-
-(defun tether--display-thread (ctx thread)
-  "Show THREAD of CTX in the thread window."
-  (let ((buffer (get-buffer-create "*tether-thread*")))
-    (with-current-buffer buffer
-      (tether-thread-mode)
-      (tether-thread--render ctx thread))
-    (pop-to-buffer buffer '((display-buffer-below-selected)
-                            (window-height . fit-window-to-buffer)))))
 
 (provide 'tether-threads)
 ;;; tether-threads.el ends here

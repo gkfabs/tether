@@ -219,6 +219,7 @@ For example: (keymap-set tether-mode-map \"C-c t\" tether-prefix-map)."
   "r" #'tether-reply
   "R" #'tether-resolve
   "k" #'tether-delete-comment
+  "H" #'tether-toggle-resolved
   "w" #'tether-review-start
   "W" #'tether-review-submit
   "X" #'tether-review-discard
@@ -269,10 +270,10 @@ modes, so bind `tether-prefix-map' where you like.")
     ("m" "magit-status" tether-status)]
    ["Threads"
     ("l" "list" tether-threads)
-    ("." "this line's thread" tether-show-thread)
-    ("r" "reply" tether-reply)
+    ("." "this line's thread, reply" tether-show-thread)
     ("R" "resolve / reopen" tether-resolve)
     ("k" "delete a comment" tether-delete-comment)
+    ("H" "show / hide resolved" tether-toggle-resolved)
     ("n" "next" tether-next-thread :transient t)
     ("p" "previous" tether-previous-thread :transient t)]
    ["Review"

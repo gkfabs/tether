@@ -50,8 +50,8 @@ The `tether` menu (`C-c t @` with the binding above, or `@` in
 | `C` | `tether-review-commit` | review the commit at point alone (experimental) |
 | `u` | `tether-review-url` | review the pull request of a URL copied from the browser; a comment link also shows its thread |
 | `l` | `tether-threads` | the review threads, by file |
-| `.` | `tether-show-thread` | the thread of the current line, in full |
-| `r` | `tether-reply` | reply in the thread at point |
+| `.` | `tether-show-thread` | the thread of the current line: every comment, and a reply area below (`tether-reply` is the same) |
+| `H` | `tether-toggle-resolved` | show or hide resolved threads in files |
 | `R` | `tether-resolve` | resolve the thread at point, or reopen it |
 | `k` | `tether-delete-comment` | delete one of your comments, after confirmation |
 | `w` | `tether-review-start` | start a draft review: comments are drafts until submitted |
@@ -79,7 +79,7 @@ PR, the fringe marks the lines that can take a comment.
 Review threads are fetched in the background once the pull request is
 resolved, and again after each comment. They show on their line, with a
 fringe mark and the start of the discussion at the end of the line
-(`tether-show-resolved`, `tether-thread-summary`), and the mode line counts
+(resolved ones dimmed; `tether-show-resolved`, `tether-thread-summary`), and the mode line counts
 the open ones (`!540·3`). The thread list keeps outdated threads apart,
 with the hunk they were written on.
 

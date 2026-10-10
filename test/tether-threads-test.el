@@ -173,6 +173,7 @@
            (tether-threads-test--thread "a.el" 3 :resolved t :body "Fine")
            (tether-threads-test--thread "b.el" 1)))
     (with-current-buffer (find-file-noselect (expand-file-name "a.el"))
+      (setq-local tether-show-resolved nil)
       (tether-mode 1)
       (should (equal tether--lighter " #7·2"))
       (should (= (length tether--thread-overlays) 1))
@@ -231,7 +232,7 @@ As when `tether-show-context' runs from magit-status first."
       (should (string-suffix-p "; threads still fetching" (tether--describe ctx))))))
 
 (ert-deftest tether-threads-test-show-thread ()
-  "The thread of the current line, every comment, in a buffer below."
+  "The thread of the current line, every comment, with a reply area."
   (tether-threads-test-with
     (let ((thread (tether-threads-test--thread "a.el" 2 :body "A long first comment")))
       (setf (tether-thread-comments thread)
@@ -242,15 +243,15 @@ As when `tether-show-context' runs from magit-status first."
     (goto-char (point-min))
     (should-error (tether-show-thread) :type 'user-error)
     (forward-line 1)
-    (tether-show-thread)
-    (with-current-buffer "*tether-thread*"
-      (should (derived-mode-p 'tether-thread-mode))
+    (with-current-buffer (tether-show-thread)
+      (should (derived-mode-p 'tether-comment-mode))
       (let ((text (buffer-string)))
-        (should (string-match-p "^#7 a.el:2  2 comments" text))
+        (should (string-match-p "^a.el:2  2 comments" text))
         (should (string-match-p "A long first comment" text))
         (should (string-match-p "bob" text))
-        (should (string-match-p "line two" text))))
-    (kill-buffer "*tether-thread*")))
+        (should (string-match-p "line two" text)))
+      (setq tether-comment--sent t)
+      (kill-buffer))))
 
 (ert-deftest tether-threads-test-next-previous ()
   (tether-threads-test-with

@@ -105,7 +105,7 @@
 ;;;; Commands
 
 (defmacro tether-reply-test-with (&rest body)
-  "Run BODY in the thread window of a GitHub thread on a.el:2.
+  "Run BODY in the thread buffer of a GitHub thread on a.el:2.
 `ctx', `thread' and `tether-test-requests' are bound."
   (declare (indent 0) (debug t))
   `(let* ((ctx (tether-reply-test--ctx (tether-test-github-repo)))
@@ -113,10 +113,12 @@
      (cl-letf (((symbol-function 'tether-context-current-p) (lambda (_) t))
                ((symbol-function 'tether--context-fresh-p) (lambda (_) t)))
        (tether-test-with-handler #'tether-reply-test--answer
-         (with-temp-buffer
-           (tether-thread-mode)
-           (tether-thread--render ctx thread)
-           ,@body)))))
+         (let ((buffer (tether--open-thread ctx thread)))
+           (unwind-protect
+               (with-current-buffer buffer ,@body)
+             (when (buffer-live-p buffer)
+               (with-current-buffer buffer (setq tether-comment--sent t))
+               (kill-buffer buffer))))))))
 
 (ert-deftest tether-reply-test-resolve-command ()
   "From the thread window: resolve, and fetch the threads again."
@@ -151,17 +153,42 @@
                       :variables)
                      '((input (id . "C2"))))))))
 
-(ert-deftest tether-reply-test-reply-command ()
-  "The reply is written in the editor, with the discussion below."
+(ert-deftest tether-reply-test-conversation-updates ()
+  "New comments appear in the open thread; the text being typed stays."
   (tether-reply-test-with
-    (let ((editor (tether-reply)))
-      (with-current-buffer editor
-        (should (equal (buffer-name editor) "*tether-comment o/r#7 reply on a.el:2*"))
-        (should (string-match-p "the discussion, for reference" (buffer-string)))
-        (should (string-match-p "Fixed: thanks" (buffer-string)))
-        (insert "Agreed")
-        (tether-comment-send))
-      (should-not (buffer-live-p editor))
+    (goto-char (point-max))
+    (insert "half written")
+    (let ((fresh (tether-reply-test--thread)))
+      (setf (tether-thread-comments fresh)
+            (append (tether-thread-comments fresh)
+                    (list (list :id "C3" :author "carol" :body "New one"))))
+      (setf (tether-context-threads ctx) (list fresh))
+      (cl-letf (((symbol-function 'tether--context-key) (lambda (_) 'same)))
+        (tether-comment--threads-arrived ctx)))
+    (should (string-match-p "carol" (buffer-string)))
+    (should (string-match-p "3 comments" (buffer-string)))
+    (should (equal (tether-comment--body) "half written"))))
+
+(ert-deftest tether-reply-test-reply-command ()
+  "One buffer: the discussion above, the reply typed below, still open after."
+  (tether-reply-test-with
+    (let ((editor (current-buffer)))
+      (should (equal (buffer-name editor) "*tether-thread o/r#7 a.el:2*"))
+      (should (eq (tether-reply) editor))
+      (let ((text (buffer-string)))
+        (should (< (string-match "Off by one" text)
+                   (string-match "Fixed: thanks" text)
+                   (string-match "Your reply, below" text))))
+      (should (= (point) (point-max)))
+      ;; The discussion cannot be edited; the reply area can.
+      (goto-char (point-min))
+      (should-error (insert "x") :type 'text-read-only)
+      (goto-char (point-max))
+      (insert "Agreed")
+      (should (equal (tether-comment--body) "Agreed"))
+      (tether-comment-send)
+      (should (buffer-live-p editor))
+      (should (equal (tether-comment--body) ""))
       (should (equal (plist-get
                       (seq-find (lambda (r) (eq (tether-test-graphql-operation r)
                                                 'addPullRequestReviewThreadReply))
