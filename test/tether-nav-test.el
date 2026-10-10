@@ -157,6 +157,49 @@ through `tether--buffer-pullreq' or the stubbed branch lookup."
       (should (equal (tether--browse-url gitlab ctx "a.el" 30 'right)
                      "https://gitlab.com/g/sub/p/-/merge_requests/7/diffs#71766e750b2dfb36f9320b14c24813ff49022960")))))
 
+(ert-deftest tether-nav-test-parse-url ()
+  "Pull and merge request URLs, with or without more after the number."
+  (should (equal (tether--parse-pullreq-url
+                  "https://gitlab.com/ayolab/sub/proj/-/merge_requests/540/diffs#note_12")
+                 '("https://gitlab.com/ayolab/sub/proj" 540 "note_12")))
+  (should (equal (tether--parse-pullreq-url "https://gitlab.com/a/b/-/merge_requests/7")
+                 '("https://gitlab.com/a/b" 7 nil)))
+  (should (equal (tether--parse-pullreq-url
+                  "https://github.com/o/r/pull/12/files#discussion_r99")
+                 '("https://github.com/o/r" 12 "discussion_r99")))
+  (should (equal (tether--parse-pullreq-url "https://ghe.example.com/o/r/pull/3")
+                 '("https://ghe.example.com/o/r" 3 nil)))
+  (should-not (tether--parse-pullreq-url "https://github.com/o/r/issues/12")))
+
+;;;; Single-commit review
+
+(ert-deftest tether-nav-test-review-commit ()
+  "A commit of the PR alone: its diff, and comments target it."
+  (tether-nav-test-with (tether-test-gitlab-repo)
+    (cl-letf (((symbol-function 'tether-context--1) (lambda (&rest _) ctx)))
+      ;; Not a commit of the PR.
+      (should-error (tether-review-commit main2) :type 'user-error)
+      ;; pr1 changes a.el; the PR head also adds b.el.
+      (tether-review-commit pr1)
+      (should (equal tether--buffer-commit pr1))
+      (let ((commit-ctx (tether-context t)))
+        (should (equal (tether-context-head-sha commit-ctx) pr1))
+        (should (equal (tether-context-base-sha commit-ctx) base))
+        (should (tether--diff-range-of-pr-p commit-ctx))
+        (should (string-match-p (format "commit %s only" (substring pr1 0 7))
+                                (tether--describe commit-ctx)))
+        (should (tether-file-map commit-ctx "a.el"))
+        (should-not (tether-file-map commit-ctx "b.el"))
+        (tether--diff-goto "a.el" 2)
+        (tether-test-with-handler (lambda (_) '(:value ((id . "d") (notes ((id . 1))))))
+          (let ((target (tether--diff-target commit-ctx)))
+            (tether--post-comment repo commit-ctx target "On this commit"))
+          (let ((payload (plist-get (car tether-test-requests) :payload)))
+            (should (equal (alist-get 'commit_id payload) pr1))
+            (should (equal (alist-get 'head_sha (alist-get 'position payload)) pr1))
+            (should (equal (alist-get 'base_sha (alist-get 'position payload))
+                           base))))))))
+
 ;;;; tether-mode
 
 (ert-deftest tether-nav-test-mode ()

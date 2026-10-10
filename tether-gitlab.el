@@ -93,8 +93,10 @@ During a draft review, the comment is a draft note."
                   repo "POST" (tether-gitlab--merge-request repo number "/draft_notes")
                   nil :payload
                   (if (plist-get target :end)
-                      `((note . ,body)
-                        (position . ,(tether-gitlab--position ctx target)))
+                      (tether--compact
+                       `((note . ,body)
+                         (commit_id . ,(tether-context-commit ctx))
+                         (position . ,(tether-gitlab--position ctx target))))
                     `((note . ,(format "`%s`\n\n%s" (plist-get target :path)
                                        body)))))))
     (unless (plist-get result :ok)
@@ -116,8 +118,12 @@ with M-x tether-review-submit" (tether--target-label target) number))))
             (tether--call repo "POST"
                           (tether-gitlab--merge-request repo number "/discussions")
                           nil :payload
-                          `((body . ,body)
-                            (position . ,(tether-gitlab--position ctx target)))))))
+                          (tether--compact
+                           `((body . ,body)
+                             ;; A single-commit review: GitLab's commit_id,
+                             ;; and a position on the commit's own diff.
+                             (commit_id . ,(tether-context-commit ctx))
+                             (position . ,(tether-gitlab--position ctx target))))))))
     (unless (plist-get result :ok)
       (tether--rejected "GitLab" target result))
     (let* ((value (plist-get result :value))

@@ -405,6 +405,9 @@ fetches the threads again.
 
 (add-hook 'tether-threads-functions #'tether--threads-arrived)
 
+;; `tether-review-url' shows the thread a comment link points to.
+(setq tether--url-thread-hook #'tether--display-thread)
+
 ;;;###autoload
 (defun tether-threads (&optional pick)
   "List the review threads of the pull request, by file.
@@ -590,9 +593,12 @@ your own."
 It opens below; \\<tether-thread-mode-map>\\[quit-window] there \
 closes it and comes back."
   (interactive)
-  (let* ((ctx (tether--threads-ctx))
-         (thread (tether--thread-at-point-or-error ctx))
-         (buffer (get-buffer-create "*tether-thread*")))
+  (let ((ctx (tether--threads-ctx)))
+    (tether--display-thread ctx (tether--thread-at-point-or-error ctx))))
+
+(defun tether--display-thread (ctx thread)
+  "Show THREAD of CTX in the thread window."
+  (let ((buffer (get-buffer-create "*tether-thread*")))
     (with-current-buffer buffer
       (tether-thread-mode)
       (tether-thread--render ctx thread))

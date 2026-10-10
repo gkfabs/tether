@@ -42,7 +42,7 @@
   :group 'tether)
 
 (cl-defstruct (tether-context (:constructor tether-context--make)
-                              (:copier nil))
+                              (:copier tether-context--copy))
   "What tether knows about the pull request of a worktree."
   repo          ; forge repository
   pullreq       ; forge pull request
@@ -57,6 +57,7 @@
   threads-state ; nil (not fetched), loading, done or error
   review        ; plist (:active :id :drafts) of the user's draft review,
                 ; nil until fetched
+  commit        ; for a single-commit review, the commit; else nil
   checked-out   ; non-nil when the current branch is the PR's
   head-state    ; (STATE COUNT): same, behind, ahead, other or none
   local-head    ; HEAD when resolved, to notice it moving
@@ -76,6 +77,13 @@ Set in the diff and blob buffers tether opens, so they belong to
 their PR whatever the branch.")
 ;; magit re-runs the major mode when it refreshes these buffers.
 (put 'tether--buffer-pullreq 'permanent-local t)
+
+(defvar-local tether--buffer-commit nil
+  "The commit a diff buffer of a single-commit review shows.")
+(put 'tether--buffer-commit 'permanent-local t)
+
+(defvar tether--commit-contexts (make-hash-table :test #'equal)
+  "Single-commit review contexts, by (CONTEXT-KEY . COMMIT).")
 
 (defvar tether-context-functions nil
   "Functions called with each newly resolved review context.")
@@ -341,12 +349,40 @@ Never prompts and never makes a request."
               (ctx (gethash (cons toplevel number) tether--contexts)))
     (and (tether--context-fresh-p ctx) ctx)))
 
+(defun tether--commit-context (ctx commit)
+  "Return the context reviewing COMMIT alone, within CTX's pull request.
+Its diff is COMMIT^..COMMIT; comments target COMMIT."
+  (let ((key (cons (tether--context-key ctx) commit)))
+    (or (let ((cached (gethash key tether--commit-contexts)))
+          (and cached
+               (equal (tether-context-generation cached)
+                      (tether-context-generation ctx))
+               cached))
+        (let* ((default-directory (tether-context-toplevel ctx))
+               (parent (or (magit-rev-parse (concat commit "^"))
+                           (user-error "Tether: %s has no parent" commit)))
+               (copy (tether-context--copy ctx)))
+          (setf (tether-context-commit copy) commit
+                (tether-context-base-sha copy) parent
+                (tether-context-start-sha copy) parent
+                (tether-context-head-sha copy) commit
+                (tether-context-maps copy) (make-hash-table :test #'equal))
+          (puthash key copy tether--commit-contexts)))))
+
 (defun tether-context (&optional demand pick)
   "Return the review context of the current buffer.
 Without DEMAND, return the cached context or nil, without prompting
 or making requests.  With DEMAND, resolve it, signaling a
 `user-error' that says what to do when that is not possible.  With
 PICK, read the pull request instead of using the current one."
+  (let ((ctx (tether-context--1 demand pick)))
+    (if (and ctx tether--buffer-commit (not pick))
+        (tether--commit-context ctx tether--buffer-commit)
+      ctx)))
+
+(defun tether-context--1 (demand pick)
+  "Return the review context of the current buffer's pull request.
+DEMAND and PICK are as for `tether-context'."
   (if (not (or demand pick))
       (tether--cached-context)
     (let* ((toplevel (or (magit-toplevel)
@@ -379,7 +415,9 @@ PICK, read the pull request instead of using the current one."
   (let* ((repo (tether-context-repo ctx))
          (pullreq (tether-context-pullreq ctx)))
     (string-join
-     (cons (format "%s %s: %s..%s"
+     (cons (format (if (tether-context-commit ctx)
+                       "%s %s: commit %4$s only"
+                     "%s %s: %s..%s")
                    (tether--label repo (oref pullreq number))
                    (oref pullreq title)
                    (substring (tether-context-base-sha ctx) 0 7)

@@ -115,7 +115,8 @@ select lines of one side"))
 (defun tether--current-again (ctx)
   "Return CTX, or a fresh context of its pull request if CTX is stale.
 The text may take a while to write; the PR head may have moved."
-  (if (and (tether-context-current-p ctx) (tether--context-fresh-p ctx))
+  (if (or (tether-context-commit ctx)
+          (and (tether-context-current-p ctx) (tether--context-fresh-p ctx)))
       ctx
     (tether--resolve (tether-context-repo ctx) (tether-context-pullreq ctx)
                      (tether-context-toplevel ctx)

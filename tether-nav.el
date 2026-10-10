@@ -138,6 +138,7 @@ on a line of the PR head (side `right') or only of its base (side
                               (tether-context-head-sha ctx))
                       '("-M" "-U3" "--no-ext-diff"))
     (setq-local tether--buffer-pullreq id)
+    (setq-local tether--buffer-commit (tether-context-commit ctx))
     (when path
       (unless (tether--diff-goto path line)
         (message "Tether: %s%s is not in the PR diff" path
@@ -153,6 +154,95 @@ With prefix argument PICK, choose the pull request."
     (tether--show-diff ctx (plist-get at :path)
                        (and (eq (plist-get at :side) 'right)
                             (plist-get at :line)))))
+
+(defconst tether--pullreq-url-regexp
+  "\\`\\(https?://.+?\\)\\(?:/-\\)?/\\(?:pull\\|merge_requests\\)/\\([0-9]+\\)\\(?:[/?#].*\\)?\\'"
+  "A pull or merge request URL: repository, number, maybe more.")
+
+(defun tether--parse-pullreq-url (url)
+  "Return (REPO-URL NUMBER ANCHOR) of the pull request URL, or nil.
+ANCHOR is the part after #, if any."
+  (when (string-match tether--pullreq-url-regexp url)
+    (list (match-string 1 url)
+          (string-to-number (match-string 2 url))
+          (and (string-match "#\\(.+\\)\\'" url) (match-string 1 url)))))
+
+(defun tether--url-default ()
+  "Return a pull request URL from the kill ring or at point, or nil."
+  (seq-find (lambda (text)
+              (and (stringp text)
+                   (tether--parse-pullreq-url (string-trim text))))
+            (list (thing-at-point 'url t) (car kill-ring))))
+
+(defvar tether--url-thread-hook nil
+  "Function to call once with the context of `tether-review-url'.")
+
+;;;###autoload
+(defun tether-review-url (url)
+  "Review the pull request at URL, as copied from the browser.
+Shows its diff, from the local clone forge knows for the repository;
+for a link to a comment, also shows its thread."
+  (interactive
+   (let ((default (tether--url-default)))
+     (list (read-string (if default (format "Pull request URL (%s): " default)
+                          "Pull request URL: ")
+                        nil nil default))))
+  (pcase-let* ((`(,repo-url ,number ,anchor)
+                (or (tether--parse-pullreq-url (string-trim url))
+                    (user-error "Tether: not a pull or merge request URL: %s" url)))
+               (repo (or (forge-get-repository repo-url nil :tracked?)
+                         (user-error "Tether: forge does not track %s; run \
+`forge-add-repository' in its clone" repo-url)))
+               (toplevel (or (forge-get-worktree repo)
+                             (user-error "Tether: no clone of %s known to forge; \
+open it once, then retry" repo-url)))
+               (pullreq (or (forge-get-pullreq repo number)
+                            (user-error "Tether: %s is not in forge's database; \
+run `forge-pull'" (tether--label repo number))))
+               (ctx (let ((default-directory toplevel))
+                      (tether--resolve repo pullreq (file-name-as-directory toplevel)
+                                       (equal (magit-get "branch"
+                                                         (or (magit-get-current-branch) "")
+                                                         "pullRequest")
+                                              (number-to-string number))))))
+    (tether--show-diff ctx)
+    (when anchor
+      (tether--wait-for-threads ctx)
+      (when-let* ((thread (seq-find
+                           (lambda (thread)
+                             (seq-some (lambda (comment)
+                                         (string-suffix-p
+                                          (concat "#" anchor)
+                                          (or (plist-get comment :url) "")))
+                                       (tether-thread-comments thread)))
+                           (tether-context-threads ctx))))
+        (when tether--url-thread-hook
+          (funcall tether--url-thread-hook ctx thread))))))
+
+;;;###autoload
+(defun tether-review-commit (commit)
+  "Review COMMIT alone: show its diff, where comments target it.
+COMMIT is the one at point in magit, or read.  It must be one of the
+pull request's commits.  Experimental: neither GitHub nor GitLab
+documents comments on a commit that is not the PR head."
+  (interactive
+   (list (or (magit-commit-at-point)
+             (and (derived-mode-p 'magit-revision-mode) magit-buffer-revision)
+             (magit-read-branch-or-commit "Review commit"))))
+  (let* ((ctx (let ((tether--buffer-commit nil)) (tether-context t)))
+         (default-directory (tether-context-toplevel ctx))
+         (sha (or (magit-rev-parse (concat commit "^{commit}"))
+                  (user-error "Tether: no commit %s" commit))))
+    (unless (and (magit-rev-ancestor-p sha (tether-context-head-sha ctx))
+                 (not (magit-rev-ancestor-p sha (tether-context-base-sha ctx))))
+      (user-error "Tether: %s is not one of the commits of %s" (substring sha 0 7)
+                  (tether--label (tether-context-repo ctx)
+                                 (oref (tether-context-pullreq ctx) number))))
+    (tether--show-diff (tether--commit-context ctx sha))
+    (message "Tether: reviewing commit %s of %s alone (experimental)"
+             (substring sha 0 7)
+             (tether--label (tether-context-repo ctx)
+                            (oref (tether-context-pullreq ctx) number)))))
 
 ;;;###autoload
 (defun tether-review-pullreq ()

@@ -47,6 +47,8 @@ The `tether` menu (`C-c t @` with the binding above, or `@` in
 | `b` | `tether-browse` | the PR diff in the browser, at the line |
 | `m` | `tether-status` | magit-status |
 | `v` | `tether-review-pullreq` | pick any pull request and open its diff |
+| `C` | `tether-review-commit` | review the commit at point alone (experimental) |
+| `u` | `tether-review-url` | review the pull request of a URL copied from the browser; a comment link also shows its thread |
 | `l` | `tether-threads` | the review threads, by file |
 | `.` | `tether-show-thread` | the thread of the current line, in full |
 | `r` | `tether-reply` | reply in the thread at point |

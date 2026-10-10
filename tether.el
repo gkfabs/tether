@@ -233,6 +233,8 @@ For example: (keymap-set tether-mode-map \"C-c t\" tether-prefix-map)."
   "b" #'tether-browse
   "m" #'tether-status
   "v" #'tether-review-pullreq
+  "u" #'tether-review-url
+  "C" #'tether-review-commit
   "s" #'tether-show-context
   "g" #'tether-refresh)
 
@@ -280,6 +282,8 @@ modes, so bind `tether-prefix-map' where you like.")
     ("A" "approve" tether-approve)]
    ["Pull request"
     ("v" "review another" tether-review-pullreq)
+    ("u" "review from a URL" tether-review-url)
+    ("C" "review one commit" tether-review-commit)
     ("s" "show" tether-show-context)
     ("g" "refresh" tether-refresh)
     ("x" "clear cache" tether-clear-cache)]])

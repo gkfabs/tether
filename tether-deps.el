@@ -39,12 +39,14 @@
     forge-read-pullreq
     forge-visit-pullreq
     forge-visit-topic-from-url
+    forge-get-worktree
     ;; ghub
     ghub-query
     ghub-request
     ;; magit
     magit-blob-mode
     magit-call-git
+    magit-commit-at-point
     magit-current-section
     magit-diff-range
     magit-diff-visit-worktree-file
@@ -58,6 +60,7 @@
     magit-git-lines
     magit-git-string
     magit-merge-base
+    magit-read-branch-or-commit
     magit-rev-ancestor-p
     magit-rev-parse
     magit-rev-verify
@@ -74,6 +77,7 @@
 
 (defconst tether--external-variables
   '(ghub-response-headers
+    magit-buffer-revision
     magit-section-mode-map
     magit-blob-mode-hook
     magit-buffer-diff-range
@@ -82,7 +86,7 @@
   "Variables tether reads or hooks into from magit, forge and ghub.")
 
 (defconst tether--external-classes
-  '((forge-repository id owner name apihost githost remote pullreqs)
+  '((forge-repository id owner name apihost githost remote pullreqs worktree)
     (forge-github-repository)
     (forge-gitlab-repository)
     (forge-pullreq id repository number title state author base-ref head-ref
@@ -94,7 +98,8 @@
   "Classes tether dispatches on, each followed by the slots it reads.")
 
 (defconst tether--external-other
-  '(forge-topic-mode magit-mode magit-diff-mode magit-status-mode ghub-error
+  '(forge-topic-mode magit-mode magit-diff-mode magit-status-mode
+    magit-revision-mode ghub-error
     magit-section)                      ; the feature, for `require'
   "Other symbols tether names: modes for `derived-mode-p', error symbols.")
 
