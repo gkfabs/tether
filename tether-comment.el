@@ -29,6 +29,7 @@
 (require 'tether-lines)
 (require 'tether-nav)
 (require 'tether-threads)
+(require 'tether-review)
 (require 'diff-mode)
 (require 'markdown-mode)
 
@@ -214,14 +215,23 @@ is for reference and is not sent.
 (defun tether-comment--insert-reference (ctx target)
   "Insert the hunk of TARGET in CTX's diff, read-only, below the text.
 For a reply, insert the discussion instead."
-  (if-let* ((thread (plist-get target :thread)))
+  (cond
+   ((plist-get target :review)
+    (save-excursion
+      (goto-char (point-max))
+      (let ((start (point)))
+        (insert (format "\n-- Not sent: the summary of the review; it publishes \
+your %s --\n" (tether--drafts-note ctx)))
+        (add-text-properties start (point) '(tether-reference t read-only t)))))
+   ((plist-get target :thread)
+    (let ((thread (plist-get target :thread)))
       (save-excursion
         (goto-char (point-max))
         (let ((start (point)))
           (insert "\n-- Not sent: the discussion, for reference --\n")
           (tether-threads--insert-comments thread)
-          (add-text-properties start (point) '(tether-reference t read-only t))))
-    (tether-comment--insert-hunk ctx target)))
+          (add-text-properties start (point) '(tether-reference t read-only t))))))
+   (t (tether-comment--insert-hunk ctx target))))
 
 (defun tether-comment--insert-hunk (ctx target)
   "Insert the hunk of TARGET in CTX's diff, read-only, below the text."
@@ -285,7 +295,7 @@ same target again shows the editor already open."
 When posting fails the editor stays open, saying why."
   (interactive)
   (let ((body (tether-comment--body)))
-    (when (string-empty-p body)
+    (when (and (string-empty-p body) (not (plist-get tether-comment--target :review)))
       (user-error "Tether: empty comment, nothing posted"))
     (condition-case err
         (let* ((ctx (tether--current-again tether-comment--ctx))
@@ -293,13 +303,17 @@ When posting fails the editor stays open, saying why."
                            tether-comment--target
                          (funcall tether-comment--retarget ctx)))
                (thread (plist-get target :thread))
-               (result (if thread
-                           (tether--reply (tether-context-repo ctx) ctx thread body)
-                         (tether--post-comment (tether-context-repo ctx) ctx
-                                               target body))))
+               (result (cond
+                        ((plist-get target :review)
+                         (tether--submit-review ctx (plist-get target :review) body))
+                        (thread
+                         (tether--reply (tether-context-repo ctx) ctx thread body))
+                        (t (tether--post-comment (tether-context-repo ctx) ctx
+                                                 target body)))))
           (setq tether-comment--sent t)
           (tether-comment--close)
           (tether-fetch-threads ctx)
+          (tether-fetch-review ctx)
           (message "Tether: %s%s" (plist-get result :message)
                    (if-let* ((url (plist-get result :url)))
                        (concat " — " url)

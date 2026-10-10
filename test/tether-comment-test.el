@@ -30,7 +30,9 @@ Answers GitHub and GitLab requests, with no pending review."
       (cond
        ((tether-test-graphql-operation request)
         '(:value ((repository (pullRequest (reviews (nodes)))))))
-       ((and (equal method "GET") (string-suffix-p "/discussions" resource))
+       ((and (equal method "GET")
+             (or (string-suffix-p "/discussions" resource)
+                 (string-suffix-p "/draft_notes" resource)))
         '(:value nil))
        ((and (equal method "GET") (string-prefix-p "/projects/" resource))
         `(:value ((target_branch . "main")

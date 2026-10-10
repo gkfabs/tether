@@ -250,6 +250,127 @@ WHAT names the action in the error saying GitHub refused it."
                          `((id . ,(plist-get comment :id)))
                          "delete the comment"))
 
+;;;; Reviews
+
+(defconst tether-github--pullreq-id-query
+  '(query (repository [(owner $owner String!) (name $name String!)]
+                      (pullRequest [(number $number Int!)] id)))
+  "The node id of a pull request.")
+
+(defconst tether-github--viewer-query '(query (viewer login))
+  "The login of the token's user.")
+
+(defvar tether-github--viewers nil
+  "Login of the token's user, by API host.")
+
+(defun tether-github--pr-variables (repo ctx)
+  "Return the GraphQL variables naming CTX's pull request on REPO."
+  `((owner . ,(oref repo owner))
+    (name . ,(oref repo name))
+    (number . ,(oref (tether-context-pullreq ctx) number))))
+
+(defun tether-github--pullreq-id (repo ctx)
+  "Return the GraphQL node id of CTX's pull request on REPO."
+  (or (oref (tether-context-pullreq ctx) their-id)
+      (let-alist (tether--query repo tether-github--pullreq-id-query
+                                (tether-github--pr-variables repo ctx))
+        .repository.pullRequest.id)))
+
+(defun tether-github--viewer (repo)
+  "Return the login of the token's user on REPO's host."
+  (let ((host (oref repo apihost)))
+    (or (cdr (assoc host tether-github--viewers))
+        (let ((login (let-alist (tether--query repo tether-github--viewer-query)
+                       .viewer.login)))
+          (push (cons host login) tether-github--viewers)
+          login))))
+
+(defun tether-github--check-not-own (repo ctx verdict)
+  "Refuse VERDICT on the user's own pull request of CTX on REPO.
+GitHub would refuse it too."
+  (when (and (memq verdict '(approve request-changes))
+             (equal (oref (tether-context-pullreq ctx) author)
+                    (tether-github--viewer repo)))
+    (user-error "Tether: GitHub does not let you give %s on your own pull request"
+                (tether--verdict-name verdict))))
+
+(defun tether-github--event (verdict)
+  "Return GitHub's review event for VERDICT."
+  (pcase verdict
+    ('approve "APPROVE")
+    ('request-changes "REQUEST_CHANGES")
+    (_ "COMMENT")))
+
+(cl-defmethod tether--review-state ((repo forge-github-repository) ctx done)
+  "Fetch the user's pending review of CTX's PR on GitHub REPO; call DONE."
+  (tether--query-async
+   repo tether-github--pending-review-query (tether-github--pr-variables repo ctx)
+   (lambda (result)
+     (funcall done
+              (if (plist-get result :ok)
+                  (let-alist (plist-get result :value)
+                    (let ((review (car .repository.pullRequest.reviews.nodes)))
+                      (list :ok t
+                            :review (list :id (alist-get 'id review)
+                                          :drafts (or (alist-get
+                                                       'totalCount
+                                                       (alist-get 'comments review))
+                                                      0)))))
+                result)))))
+
+(cl-defmethod tether--review-start ((repo forge-github-repository) ctx)
+  "Create a pending review of CTX's pull request on GitHub REPO."
+  (let-alist (tether-github--mutate
+              repo '(mutation (addPullRequestReview
+                               [(input $input AddPullRequestReviewInput!)]
+                               (pullRequestReview id)))
+              `((pullRequestId . ,(tether-github--pullreq-id repo ctx)))
+              "start a review")
+    .addPullRequestReview.pullRequestReview.id))
+
+(cl-defmethod tether--review-submit ((repo forge-github-repository) ctx verdict body)
+  "Submit the pending review of CTX's PR on GitHub REPO with VERDICT and BODY.
+Without a pending review, give the verdict as a review of its own."
+  (tether-github--check-not-own repo ctx verdict)
+  (let* ((number (oref (tether-context-pullreq ctx) number))
+         (pending (tether-github--pending-review repo number))
+         (body (and (not (string-empty-p body)) body)))
+    (if pending
+        (tether-github--mutate
+         repo '(mutation (submitPullRequestReview
+                          [(input $input SubmitPullRequestReviewInput!)]
+                          (pullRequestReview id)))
+         (tether--compact `((pullRequestReviewId . ,(car pending))
+                            (event . ,(tether-github--event verdict))
+                            (body . ,body)))
+         "submit the review")
+      (tether-github--mutate
+       repo '(mutation (addPullRequestReview
+                        [(input $input AddPullRequestReviewInput!)]
+                        (pullRequestReview id)))
+       (tether--compact `((pullRequestId . ,(tether-github--pullreq-id repo ctx))
+                          (event . ,(tether-github--event verdict))
+                          (body . ,body)))
+       "give the review"))
+    (format "submitted the review of #%d as %s%s" number
+            (tether--verdict-name verdict)
+            (if pending (format " (%d comments)" (cdr pending)) ""))))
+
+(cl-defmethod tether--review-discard ((repo forge-github-repository) ctx)
+  "Delete the pending review of CTX's pull request on GitHub REPO."
+  (when-let* ((pending (tether-github--pending-review
+                        repo (oref (tether-context-pullreq ctx) number))))
+    (tether-github--mutate
+     repo '(mutation (deletePullRequestReview
+                      [(input $input DeletePullRequestReviewInput!)]
+                      (pullRequestReview id)))
+     `((pullRequestReviewId . ,(car pending)))
+     "discard the review")))
+
+(cl-defmethod tether--approve ((repo forge-github-repository) ctx)
+  "Approve CTX's pull request on GitHub REPO."
+  (tether--review-submit repo ctx 'approve ""))
+
 (cl-defmethod tether--pullreq-ref ((_repo forge-github-repository) number)
   "Return GitHub's ref for the head of pull request NUMBER."
   (format "refs/pull/%d/head" number))

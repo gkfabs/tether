@@ -40,7 +40,7 @@
               :checked-out t :head-state '(same 0)
               :local-head (magit-rev-parse "HEAD")
               :local-branch (magit-get-current-branch)
-              :threads threads :threads-state 'done
+              :threads threads :threads-state 'done :review (list :drafts 0)
               :generation 0 :fetched-at (float-time))))
     (puthash (cons (tether-context-toplevel ctx) 7) ctx tether--contexts)
     ctx))

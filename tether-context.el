@@ -55,6 +55,8 @@
   maps          ; hash: path -> line map (step 3)
   threads       ; list of `tether-thread'
   threads-state ; nil (not fetched), loading, done or error
+  review        ; plist (:active :id :drafts) of the user's draft review,
+                ; nil until fetched
   checked-out   ; non-nil when the current branch is the PR's
   head-state    ; (STATE COUNT): same, behind, ahead, other or none
   local-head    ; HEAD when resolved, to notice it moving

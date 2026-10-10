@@ -49,6 +49,7 @@
 (require 'tether-comment)
 (require 'tether-nav)
 (require 'tether-threads)
+(require 'tether-review)
 
 (defgroup tether nil
   "Review pull requests and merge requests from file buffers."
@@ -147,7 +148,11 @@ A warning sign means the local branch is not the PR head."
                     (pcase (and ctx (tether-context-threads-state ctx))
                       ('loading "·…")
                       ('done (let ((open (length (tether--open-threads ctx))))
-                               (if (> open 0) (format "·%d" open) "")))))))))
+                               (if (> open 0) (format "·%d" open) ""))))
+                    (and ctx (tether--review-active-p ctx)
+                         (format "✎%d" (or (plist-get (tether-context-review ctx)
+                                                      :drafts)
+                                           0))))))))
 
 (defun tether--clear-fringe ()
   "Remove the commentable-line overlays of the current buffer."
@@ -214,6 +219,10 @@ For example: (keymap-set tether-mode-map \"C-c t\" tether-prefix-map)."
   "r" #'tether-reply
   "R" #'tether-resolve
   "k" #'tether-delete-comment
+  "w" #'tether-review-start
+  "W" #'tether-review-submit
+  "X" #'tether-review-discard
+  "A" #'tether-approve
   "n" #'tether-next-thread
   "p" #'tether-previous-thread
   "S" #'tether-suggest
@@ -264,6 +273,11 @@ modes, so bind `tether-prefix-map' where you like.")
     ("k" "delete a comment" tether-delete-comment)
     ("n" "next" tether-next-thread :transient t)
     ("p" "previous" tether-previous-thread :transient t)]
+   ["Review"
+    ("w" "start a review" tether-review-start)
+    ("W" "submit the review" tether-review-submit)
+    ("X" "discard the review" tether-review-discard)
+    ("A" "approve" tether-approve)]
    ["Pull request"
     ("v" "review another" tether-review-pullreq)
     ("s" "show" tether-show-context)
@@ -294,6 +308,8 @@ modes, so bind `tether-prefix-map' where you like.")
 Also start fetching its review threads."
   (unless (tether-context-threads-state ctx)
     (tether-fetch-threads ctx))
+  (unless (tether-context-review ctx)
+    (tether-fetch-review ctx))
   (tether--refresh-worktree ctx))
 
 (defun tether--refresh-worktree (ctx)
@@ -369,6 +385,7 @@ no request when a file is opened."
 ;; diff, a file), fetch its threads and update the buffers showing it.
 (add-hook 'tether-context-functions #'tether--context-resolved)
 (add-hook 'tether-threads-functions #'tether--refresh-worktree)
+(add-hook 'tether-review-functions #'tether--refresh-worktree)
 
 (provide 'tether)
 ;;; tether.el ends here

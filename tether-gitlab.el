@@ -80,7 +80,30 @@ line needs both line numbers."
 
 (cl-defmethod tether--post-comment ((repo forge-gitlab-repository) ctx target body)
   "Post BODY on TARGET of CTX's merge request on GitLab REPO.
-A comment on the whole file is a general note naming the file."
+A comment on the whole file is a general note naming the file.
+During a draft review, the comment is a draft note."
+  (if (plist-get (tether-context-review ctx) :active)
+      (tether-gitlab--post-draft repo ctx target body)
+    (tether-gitlab--post-now repo ctx target body)))
+
+(defun tether-gitlab--post-draft (repo ctx target body)
+  "Add BODY on TARGET of CTX's merge request on GitLab REPO as a draft."
+  (let* ((number (oref (tether-context-pullreq ctx) number))
+         (result (tether--call
+                  repo "POST" (tether-gitlab--merge-request repo number "/draft_notes")
+                  nil :payload
+                  (if (plist-get target :end)
+                      `((note . ,body)
+                        (position . ,(tether-gitlab--position ctx target)))
+                    `((note . ,(format "`%s`\n\n%s" (plist-get target :path)
+                                       body)))))))
+    (unless (plist-get result :ok)
+      (tether--rejected "GitLab" target result))
+    (list :message (format "added %s to your draft review of !%d; submit it \
+with M-x tether-review-submit" (tether--target-label target) number))))
+
+(defun tether-gitlab--post-now (repo ctx target body)
+  "Post BODY on TARGET of CTX's merge request on GitLab REPO, published."
   (let* ((number (oref (tether-context-pullreq ctx) number))
          (file-p (null (plist-get target :end)))
          (result
@@ -196,6 +219,144 @@ RESOLVED says which."
                   (format "/notes/%s" (plist-get comment :id))))))
     (unless (plist-get result :ok)
       (tether-gitlab--refused result "delete the comment"))))
+
+;;;; Reviews
+
+(defcustom tether-gitlab-request-changes-method 'auto
+  "How to request changes on GitLab.
+`api': the reviewer_state of bulk_publish; `quick-action': a note
+with /request_changes; `auto': the API, then the quick action when
+GitLab did not record it (older instances ignore reviewer_state)."
+  :type '(choice (const auto) (const api) (const quick-action))
+  :group 'tether)
+
+(defcustom tether-gitlab-comment-sets-reviewed nil
+  "Whether submitting a review as a comment marks you as having reviewed.
+GitHub's comment verdict does not change your reviewer status."
+  :type 'boolean
+  :group 'tether)
+
+(defvar tether-gitlab--users nil
+  "Username of the token's user, by API host.")
+
+(defun tether-gitlab--user (repo)
+  "Return the username of the token's user on REPO's host."
+  (let ((host (oref repo apihost)))
+    (or (cdr (assoc host tether-gitlab--users))
+        (let ((name (alist-get 'username (tether--request repo "GET" "/user"))))
+          (push (cons host name) tether-gitlab--users)
+          name))))
+
+(defun tether-gitlab--reviewer-state (repo number user)
+  "Return USER's reviewer state on merge request NUMBER of REPO.
+Return nil when USER is not a reviewer, \"unknown\" when GitLab gives
+no state."
+  (when-let* ((reviewer
+               (seq-find (lambda (reviewer)
+                           (equal (alist-get 'username (alist-get 'user reviewer)) user))
+                         (tether--request
+                          repo "GET" (tether-gitlab--merge-request repo number "/reviewers")))))
+    (or (alist-get 'state reviewer) "unknown")))
+
+(cl-defmethod tether--review-state ((repo forge-gitlab-repository) ctx done)
+  "Count the user's draft notes on CTX's merge request on GitLab REPO.
+Call DONE with the result."
+  (tether--call-async
+   repo "GET" (tether-gitlab--merge-request
+               repo (oref (tether-context-pullreq ctx) number) "/draft_notes")
+   (lambda (result)
+     (funcall done (if (plist-get result :ok)
+                       (list :ok t :review (list :drafts (length (plist-get result :value))))
+                     result)))
+   :unpaginate t))
+
+(cl-defmethod tether--review-start ((_repo forge-gitlab-repository) _ctx)
+  "Start a draft review on GitLab: there is nothing to create there."
+  nil)
+
+(defun tether-gitlab--publish (repo number body state)
+  "Publish the drafts of merge request NUMBER of REPO, with summary BODY.
+STATE is the reviewer_state to set, or nil."
+  (let ((result (tether--call
+                 repo "POST"
+                 (tether-gitlab--merge-request repo number "/draft_notes/bulk_publish")
+                 nil :payload (tether--compact
+                               `((note . ,(and (not (string-empty-p body)) body))
+                                 (reviewer_state . ,state))))))
+    (unless (plist-get result :ok)
+      (tether-gitlab--refused result "publish the review"))))
+
+(defun tether-gitlab--note (repo number body)
+  "Post the general note BODY on merge request NUMBER of REPO."
+  (let ((result (tether--call repo "POST"
+                              (tether-gitlab--merge-request repo number "/notes")
+                              nil :payload `((body . ,body)))))
+    (unless (plist-get result :ok)
+      (tether-gitlab--refused result "post the note"))))
+
+(defun tether-gitlab--request-changes (repo ctx body)
+  "Publish the drafts of CTX's merge request on GitLab REPO, as a change request.
+GitLab adds you as a reviewer if you are not one, except when you are
+the author.  It answers success even when it did not record the
+request, so the reviewer state is read back."
+  (let* ((number (oref (tether-context-pullreq ctx) number))
+         (user (tether-gitlab--user repo))
+         (method tether-gitlab-request-changes-method))
+    (unless (tether-gitlab--reviewer-state repo number user)
+      (when (equal user (oref (tether-context-pullreq ctx) author))
+        (user-error "Tether: GitLab does not let the author of !%d request changes"
+                    number))
+      (unless (y-or-n-p (format "You are not a reviewer of !%d; GitLab will add you.  \
+Continue? " number))
+        (user-error "Tether: review not submitted")))
+    (tether-gitlab--publish repo number body
+                            (and (not (eq method 'quick-action)) "requested_changes"))
+    (unless (or (eq method 'api)
+                (and (eq method 'auto)
+                     (equal (tether-gitlab--reviewer-state repo number user)
+                            "requested_changes")))
+      (tether-gitlab--note repo number "/request_changes"))
+    (if (equal (tether-gitlab--reviewer-state repo number user) "requested_changes")
+        (format "submitted the review of !%d as a request for changes" number)
+      (format "published the review of !%d, but GitLab did not record the \
+request for changes" number))))
+
+(cl-defmethod tether--review-submit ((repo forge-gitlab-repository) ctx verdict body)
+  "Publish the draft notes of CTX's merge request on GitLab REPO.
+VERDICT and the summary BODY decide what else happens."
+  (let ((number (oref (tether-context-pullreq ctx) number)))
+    (pcase verdict
+      ('request-changes (tether-gitlab--request-changes repo ctx body))
+      ('approve
+       (tether-gitlab--publish repo number body nil)
+       (tether--approve repo ctx)
+       (format "submitted the review of !%d as an approval" number))
+      (_
+       (tether-gitlab--publish repo number body
+                               (and tether-gitlab-comment-sets-reviewed "reviewed"))
+       (format "submitted the review of !%d" number)))))
+
+(cl-defmethod tether--review-discard ((repo forge-gitlab-repository) ctx)
+  "Delete the user's draft notes on CTX's merge request on GitLab REPO."
+  (let ((number (oref (tether-context-pullreq ctx) number)))
+    (dolist (draft (tether--request repo "GET"
+                                    (tether-gitlab--merge-request repo number "/draft_notes")))
+      (let ((result (tether--call repo "DELETE"
+                                  (tether-gitlab--merge-request
+                                   repo number
+                                   (format "/draft_notes/%s" (alist-get 'id draft))))))
+        (unless (plist-get result :ok)
+          (tether-gitlab--refused result "delete a draft"))))))
+
+(cl-defmethod tether--approve ((repo forge-gitlab-repository) ctx)
+  "Approve CTX's merge request on GitLab REPO, at the head reviewed."
+  (let ((result (tether--call
+                 repo "POST"
+                 (tether-gitlab--merge-request
+                  repo (oref (tether-context-pullreq ctx) number) "/approve")
+                 nil :payload `((sha . ,(tether-context-head-sha ctx))))))
+    (unless (plist-get result :ok)
+      (tether-gitlab--refused result "approve"))))
 
 (cl-defmethod tether--pullreq-ref ((_repo forge-gitlab-repository) number)
   "Return GitLab's ref for the head of merge request NUMBER."

@@ -32,6 +32,7 @@ CHECKED-OUT says whether the PR branch is the current one."
               :local-branch (magit-get-current-branch)
               ;; Fetched, so that resolving it makes no request.
               :threads-state 'done
+              :review (list :drafts 0)
               :generation 0 :fetched-at (float-time))))
     (puthash (cons (tether-context-toplevel ctx) 7) ctx tether--contexts)
     ctx))

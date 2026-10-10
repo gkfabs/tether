@@ -246,6 +246,27 @@ RESOLVED says which.  Signal a `user-error' when the forge refuses.")
   "Delete COMMENT, a plist of a `tether-thread', of CTX's PR on REPO.
 Signal a `user-error' when the forge refuses.")
 
+(cl-defgeneric tether--review-state (repo ctx done)
+  "Fetch the user's draft review of CTX's pull request on REPO.
+Asynchronously; call DONE with (:ok t :review PLIST), PLIST having
+:id (the forge's id of the review, if it has one) and :drafts (how
+many draft comments), or with (:ok nil :message MESSAGE).")
+
+(cl-defgeneric tether--review-start (repo ctx)
+  "Start a draft review of CTX's pull request on REPO.
+Return the forge's id of the review, or nil when it has no such thing.")
+
+(cl-defgeneric tether--review-submit (repo ctx verdict body)
+  "Publish the draft review of CTX's pull request on REPO.
+VERDICT is `comment', `approve' or `request-changes'; BODY, maybe
+empty, is the summary.  Return the message to show.")
+
+(cl-defgeneric tether--review-discard (repo ctx)
+  "Delete the draft review of CTX's pull request on REPO.")
+
+(cl-defgeneric tether--approve (repo ctx)
+  "Approve CTX's pull request on REPO, outside of any draft review.")
+
 (cl-defgeneric tether--fetch-threads (repo ctx done)
   "Fetch the review threads of CTX's pull request on REPO, asynchronously.
 Call DONE with (:ok t :threads THREADS) or (:ok nil :message MESSAGE).")
@@ -291,12 +312,22 @@ to tell the user.")
               (if (eq (tether-thread-side thread) 'left) " (removed)" ""))
     (format "%s (outdated)" (tether-thread-path thread))))
 
+(defun tether--verdict-name (verdict)
+  "Return how to name VERDICT in messages, with its article."
+  (pcase verdict
+    ('approve "an approval")
+    ('request-changes "a request for changes")
+    (_ "a comment")))
+
 (defun tether--target-label (target)
   "Return how to name TARGET in messages, like a.el:42 or a.el:40-42.
-A reply's target names its thread."
-  (if-let* ((thread (plist-get target :thread)))
-      (concat "reply on " (tether--thread-label thread))
-    (tether--target-label-1 target)))
+A reply's target names its thread, a review's its verdict."
+  (cond ((plist-get target :thread)
+         (concat "reply on " (tether--thread-label (plist-get target :thread))))
+        ((plist-get target :review)
+         (concat "review, as "
+                 (tether--verdict-name (plist-get target :review))))
+        (t (tether--target-label-1 target))))
 
 (defun tether--target-label-1 (target)
   "Return how to name TARGET, a line, region or file, in messages."

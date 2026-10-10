@@ -9,8 +9,8 @@ Built on [Forge](https://github.com/magit/forge): the repository, the pull
 request and the API token all come from Forge, so there is nothing extra to
 configure.
 
-**Status:** early development. Commenting, suggestions, navigation and
-review threads (reply, resolve, delete) work; draft reviews are to come.
+**Status:** early development. Commenting, suggestions, navigation,
+review threads (reply, resolve, delete) and draft reviews work.
 
 ## Requirements
 
@@ -52,6 +52,10 @@ The `tether` menu (`C-c t @` with the binding above, or `@` in
 | `r` | `tether-reply` | reply in the thread at point |
 | `R` | `tether-resolve` | resolve the thread at point, or reopen it |
 | `k` | `tether-delete-comment` | delete one of your comments, after confirmation |
+| `w` | `tether-review-start` | start a draft review: comments are drafts until submitted |
+| `W` | `tether-review-submit` | publish the drafts as a comment, an approval or a change request |
+| `X` | `tether-review-discard` | delete the draft review |
+| `A` | `tether-approve` | approve the pull request |
 | `n`, `p` | `tether-next-thread`, `tether-previous-thread` | go from thread to thread, across files |
 | `s`, `g`, `x` | | show, refresh, forget what tether knows about the PR |
 
@@ -76,6 +80,11 @@ fringe mark and the start of the discussion at the end of the line
 (`tether-show-resolved`, `tether-thread-summary`), and the mode line counts
 the open ones (`!540·3`). The thread list keeps outdated threads apart,
 with the hunk they were written on.
+
+A draft review lives on the forge: GitHub's pending review, GitLab's draft
+notes, so one started in the web interface works too. The mode line shows
+its drafts (`!540✎3`). On GitLab, a change request makes you a reviewer if
+you are not one (tether asks first), and tether checks it was recorded.
 
 On GitHub, while you have a pending review (started on github.com),
 comments are added to it: GitHub refuses single comments then.
