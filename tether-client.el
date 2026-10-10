@@ -136,6 +136,25 @@ that plist.  Signal a `user-error' when it does not arrive within
         :headers headers
         :message (tether--request-error-message host err headers)))
 
+(cl-defun tether--call-async (repo method resource done
+                                   &key params payload unpaginate)
+  "Send METHOD RESOURCE to the API of REPO; call DONE with the result.
+PARAMS and PAYLOAD are as for `ghub-request'; UNPAGINATE fetches all
+pages.  The result is a plist as described in `tether--call'."
+  (let ((host (oref repo apihost)))
+    (ghub-request method resource params
+                  :payload payload
+                  :unpaginate unpaginate
+                  :host host
+                  :auth 'forge
+                  :forge (tether--forge-type repo)
+                  :callback (lambda (value headers &rest _)
+                              (funcall done (list :ok t :value value
+                                                  :headers headers)))
+                  :errorback (lambda (err headers &rest _)
+                               (funcall done (tether--error-result
+                                              host err headers))))))
+
 (cl-defun tether--call (repo method resource &optional params &key payload)
   "Send METHOD RESOURCE with PARAMS or PAYLOAD to the API of REPO.
 Wait for the answer and return a plist:
@@ -144,21 +163,10 @@ Wait for the answer and return a plist:
   on an HTTP or connection error, STATUS being nil for the latter.
 Signal a `user-error' when no answer arrives within
 `tether-request-timeout' seconds."
-  (let ((host (oref repo apihost)))
-    (tether--wait
-     host
-     (lambda (done)
-       (ghub-request method resource params
-                     :payload payload
-                     :host host
-                     :auth 'forge
-                     :forge (tether--forge-type repo)
-                     :callback (lambda (value headers &rest _)
-                                 (funcall done (list :ok t :value value
-                                                     :headers headers)))
-                     :errorback (lambda (err headers &rest _)
-                                  (funcall done (tether--error-result
-                                                 host err headers))))))))
+  (tether--wait (oref repo apihost)
+                (lambda (done)
+                  (tether--call-async repo method resource done
+                                      :params params :payload payload))))
 
 (defun tether--graphql-errors-text (errors)
   "Return the messages of the GraphQL ERRORS, joined."
@@ -166,28 +174,33 @@ Signal a `user-error' when no answer arrives within
                              (format "%s" e)))
              errors "; "))
 
-(defun tether--query-call (repo query &optional variables)
-  "Send the GraphQL QUERY with VARIABLES to REPO's API and wait.
-QUERY is in ghub's s-expression syntax (see `ghub-query').  Return
+(defun tether--query-async (repo query variables done)
+  "Send the GraphQL QUERY with VARIABLES to REPO's API; call DONE.
+QUERY is in ghub's s-expression syntax (see `ghub-query'); lists
+marked with (:edges t) are fetched page after page.  DONE gets
 \=(:ok t :value DATA) or (:ok nil :errors ERRORS :message MSG)."
   (let ((host (oref repo apihost)))
-    (tether--wait
-     host
-     (lambda (done)
-       (ghub-query query variables
-         :host host
-         :auth 'forge
-         :forge (tether--forge-type repo)
-         :callback (lambda (value &rest _)
-                     (funcall done (list :ok t :value value)))
-         :errorback (lambda (errors headers &rest _)
-                      (funcall done
-                               (if (eq (car-safe errors) 'error)
-                                   (tether--error-result host errors headers)
-                                 (list :ok nil :errors errors
-                                       :message (format "Tether: %s: %s" host
-                                                        (tether--graphql-errors-text
-                                                         errors)))))))))))
+    (ghub-query query variables
+      :host host
+      :auth 'forge
+      :forge (tether--forge-type repo)
+      :callback (lambda (value &rest _)
+                  (funcall done (list :ok t :value value)))
+      :errorback (lambda (errors headers &rest _)
+                   (funcall done
+                            (if (eq (car-safe errors) 'error)
+                                (tether--error-result host errors headers)
+                              (list :ok nil :errors errors
+                                    :message (format "Tether: %s: %s" host
+                                                     (tether--graphql-errors-text
+                                                      errors)))))))))
+
+(defun tether--query-call (repo query &optional variables)
+  "Send the GraphQL QUERY with VARIABLES to REPO's API and wait.
+Return the result plist described in `tether--query-async'."
+  (tether--wait (oref repo apihost)
+                (lambda (done)
+                  (tether--query-async repo query variables done))))
 
 (defun tether--query (repo query &optional variables)
   "Send the GraphQL QUERY with VARIABLES to REPO's API; return its data.
@@ -206,6 +219,24 @@ PARAMS and PAYLOAD are passed to `ghub-request'.  Signal a
     (if (plist-get result :ok)
         (plist-get result :value)
       (user-error "%s" (plist-get result :message)))))
+
+;;;; Review threads
+
+(cl-defstruct (tether-thread (:copier nil))
+  "A review thread, the same on every forge."
+  id
+  path          ; file, as in the PR head
+  line          ; head line (base line when SIDE is `left'), nil if outdated
+  side          ; `right' (head) or `left' (base)
+  start-line    ; first line of a multi-line thread, or nil
+  head-sha      ; commit LINE is on, when the forge says (GitLab); else nil
+  original-line original-sha diff-hunk  ; where it was written
+  resolved outdated
+  comments)     ; list of plists (:author :created :body :url)
+
+(cl-defgeneric tether--fetch-threads (repo ctx done)
+  "Fetch the review threads of CTX's pull request on REPO, asynchronously.
+Call DONE with (:ok t :threads THREADS) or (:ok nil :message MESSAGE).")
 
 ;;;; Per-forge operations
 

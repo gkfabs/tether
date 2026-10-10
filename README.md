@@ -9,8 +9,8 @@ Built on [Forge](https://github.com/magit/forge): the repository, the pull
 request and the API token all come from Forge, so there is nothing extra to
 configure.
 
-**Status:** early development. Commenting, suggestions and navigation
-work; review threads and draft reviews are still to come.
+**Status:** early development. Commenting, suggestions, navigation and
+review threads work; replying, resolving and draft reviews are to come.
 
 ## Requirements
 
@@ -47,6 +47,9 @@ The `tether` menu (`C-c t @` with the binding above, or `@` in
 | `b` | `tether-browse` | the PR diff in the browser, at the line |
 | `m` | `tether-status` | magit-status |
 | `v` | `tether-review-pullreq` | pick any pull request and open its diff |
+| `l` | `tether-threads` | the review threads, by file |
+| `.` | `tether-show-thread` | the thread of the current line, in full |
+| `n`, `p` | `tether-next-thread`, `tether-previous-thread` | go from thread to thread, across files |
 | `s`, `g`, `x` | | show, refresh, forget what tether knows about the PR |
 
 Comments are written in a Markdown buffer showing the hunk for reference:
@@ -63,6 +66,13 @@ commands let you pick the pull request.
 The mode line shows the pull request (`#12` on GitHub, `!12` on GitLab),
 with ⚠ when the local branch is not the PR head. Once tether resolved the
 PR, the fringe marks the lines that can take a comment.
+
+Review threads are fetched in the background once the pull request is
+resolved, and again after each comment. They show on their line, with a
+fringe mark and the start of the discussion at the end of the line
+(`tether-show-resolved`, `tether-thread-summary`), and the mode line counts
+the open ones (`!540·3`). The thread list keeps outdated threads apart,
+with the hunk they were written on.
 
 On GitHub, while you have a pending review (started on github.com),
 comments are added to it: GitHub refuses single comments then.

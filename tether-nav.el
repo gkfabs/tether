@@ -195,13 +195,19 @@ the PR head's version."
                                             (tether-file-map ctx path)))))
                      (cdr (tether-line-code l)))
                  (plist-get at :line))))
-    (if (or head (not (tether-context-checked-out ctx)))
-        (tether--visit-blob ctx path line)
-      (find-file (expand-file-name path (tether-context-toplevel ctx)))
-      (when line
-        (let ((target (or (tether-buffer-line ctx path line) line)))
-          (goto-char (point-min))
-          (forward-line (1- target)))))))
+    (tether--visit-path ctx path line head)))
+
+(defun tether--visit-path (ctx path line &optional head)
+  "Visit PATH at head LINE of CTX's pull request.
+The worktree file when the PR is checked out, mapped through local
+edits; else, or with HEAD non-nil, the PR head's version."
+  (if (or head (not (tether-context-checked-out ctx)))
+      (tether--visit-blob ctx path line)
+    (find-file (expand-file-name path (tether-context-toplevel ctx)))
+    (when line
+      (let ((target (or (tether-buffer-line ctx path line) line)))
+        (goto-char (point-min))
+        (forward-line (1- target))))))
 
 ;;;###autoload
 (defun tether-topic ()

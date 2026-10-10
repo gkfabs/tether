@@ -48,6 +48,7 @@
 (require 'tether-lines)
 (require 'tether-comment)
 (require 'tether-nav)
+(require 'tether-threads)
 
 (defgroup tether nil
   "Review pull requests and merge requests from file buffers."
@@ -142,7 +143,11 @@ A warning sign means the local branch is not the PR head."
             (concat " " (tether--label (car found) number)
                     (and ctx (tether-context-checked-out ctx)
                          (not (eq (car (tether-context-head-state ctx)) 'same))
-                         "⚠"))))))
+                         "⚠")
+                    (pcase (and ctx (tether-context-threads-state ctx))
+                      ('loading "·…")
+                      ('done (let ((open (length (tether--open-threads ctx))))
+                               (if (> open 0) (format "·%d" open) "")))))))))
 
 (defun tether--clear-fringe ()
   "Remove the commentable-line overlays of the current buffer."
@@ -175,11 +180,26 @@ Uses the cached context only, so it never makes a request."
                                                         'tether-commentable))))
               (push overlay tether--fringe-overlays))))))))
 
+(defun tether--update-threads ()
+  "Show the review threads of the current buffer's file.
+Uses the cached context only, so it never makes a request."
+  (tether--clear-thread-overlays)
+  (when-let* ((ctx (tether-context)))
+    ;; Resolved before any buffer was in `tether-mode' (from magit-status,
+    ;; say): its threads were never asked for.
+    (unless (tether-context-threads-state ctx)
+      (tether-fetch-threads ctx))
+    (when-let* (((eq (tether-context-threads-state ctx) 'done))
+                (path (let ((default-directory (tether-context-toplevel ctx)))
+                        (magit-file-relative-name))))
+      (tether--update-thread-overlays ctx path))))
+
 (defun tether--refresh-buffer ()
-  "Update the mode line and the fringe of the current buffer."
+  "Update the mode line, fringe and threads of the current buffer."
   (with-demoted-errors "Tether: %S"
     (tether--update-lighter (tether--buffer-pr))
     (tether--update-fringe)
+    (tether--update-threads)
     (force-mode-line-update)))
 
 ;;;; Keys and menu
@@ -189,6 +209,10 @@ Uses the cached context only, so it never makes a request."
 For example: (keymap-set tether-mode-map \"C-c t\" tether-prefix-map)."
   "@" #'tether
   "c" #'tether-nitpick
+  "l" #'tether-threads
+  "." #'tether-show-thread
+  "n" #'tether-next-thread
+  "p" #'tether-previous-thread
   "S" #'tether-suggest
   "F" #'tether-nitpick-file
   "f" #'tether-visit-file
@@ -229,6 +253,11 @@ modes, so bind `tether-prefix-map' where you like.")
     ("t" "forge topic" tether-topic)
     ("b" "browser at line" tether-browse)
     ("m" "magit-status" tether-status)]
+   ["Threads"
+    ("l" "list" tether-threads)
+    ("." "this line's thread" tether-show-thread)
+    ("n" "next" tether-next-thread :transient t)
+    ("p" "previous" tether-previous-thread :transient t)]
    ["Pull request"
     ("v" "review another" tether-review-pullreq)
     ("s" "show" tether-show-context)
@@ -255,7 +284,14 @@ modes, so bind `tether-prefix-map' where you like.")
   (string-prefix-p toplevel (expand-file-name default-directory)))
 
 (defun tether--context-resolved (ctx)
-  "Update the buffers of CTX's worktree after CTX was resolved."
+  "Update the buffers of CTX's worktree after CTX was resolved.
+Also start fetching its review threads."
+  (unless (tether-context-threads-state ctx)
+    (tether-fetch-threads ctx))
+  (tether--refresh-worktree ctx))
+
+(defun tether--refresh-worktree (ctx)
+  "Update the buffers of CTX's worktree."
   (let ((toplevel (tether-context-toplevel ctx)))
     (dolist (buffer (buffer-list))
       (with-current-buffer buffer
@@ -288,8 +324,10 @@ modes, so bind `tether-prefix-map' where you like.")
   "Tie the current buffer to its pull request.
 
 Shows the pull request in the mode line, with a warning sign when
-the local branch is not the PR head, and marks the lines that can
-take a comment in the fringe once the PR was resolved.  Commands
+the local branch is not the PR head and the number of open review
+threads.  In file buffers, also marks the lines that can take a
+comment and shows the threads, once the PR was resolved.
+`global-tether-mode' turns it on in file buffers and `magit-status'.  Commands
 are in the `tether' menu and `tether-prefix-map'.
 
 \{tether-prefix-map}"
@@ -300,17 +338,19 @@ are in the `tether' menu and `tether-prefix-map'.
       (progn
         (add-hook 'after-save-hook #'tether--refresh-buffer nil t)
         (add-hook 'magit-post-refresh-hook #'tether--magit-refreshed)
-        (add-hook 'tether-context-functions #'tether--context-resolved)
         (tether--refresh-buffer))
     (remove-hook 'after-save-hook #'tether--refresh-buffer t)
     (tether--clear-fringe)
+    (tether--clear-thread-overlays)
     (setq tether--lighter nil)))
 
 (defun tether--turn-on ()
   "Turn on `tether-mode' if the buffer belongs to a pull request.
-Looks in forge's database only: no request when a file is opened."
+In file buffers and `magit-status'.  Looks in forge's database only:
+no request when a file is opened."
   (when (and (not tether-mode)
-             (or buffer-file-name tether--buffer-pullreq)
+             (or buffer-file-name tether--buffer-pullreq
+                 (derived-mode-p 'magit-status-mode))
              (or tether-enable-remote (not (file-remote-p default-directory)))
              (ignore-errors (tether--buffer-pr)))
     (tether-mode 1)))
@@ -318,6 +358,11 @@ Looks in forge's database only: no request when a file is opened."
 ;;;###autoload
 (define-globalized-minor-mode global-tether-mode tether-mode tether--turn-on
   :group 'tether)
+
+;; Whatever buffer a pull request is resolved from (magit-status, a
+;; diff, a file), fetch its threads and update the buffers showing it.
+(add-hook 'tether-context-functions #'tether--context-resolved)
+(add-hook 'tether-threads-functions #'tether--refresh-worktree)
 
 (provide 'tether)
 ;;; tether.el ends here

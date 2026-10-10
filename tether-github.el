@@ -150,6 +150,54 @@ so the comment goes into that review instead."
           (tether-github--add-to-review repo number pending target body))
          (t (tether--rejected "GitHub" target result)))))))
 
+;;;; Threads
+
+(defconst tether-github--threads-query
+  '(query (repository [(owner $owner String!) (name $name String!)]
+                      (pullRequest [(number $number Int!)]
+                                   (reviewThreads [(:edges t)]
+                                                  id isResolved isOutdated path line
+                                                  startLine originalLine diffSide
+                                                  (comments [(:edges t)]
+                                                            body createdAt url diffHunk
+                                                            (author login)
+                                                            (originalCommit oid))))))
+  "The review threads of a pull request, every page of them.")
+
+(defun tether-github--thread (node)
+  "Return the `tether-thread' of the GraphQL reviewThread NODE."
+  (let* ((comments (alist-get 'comments node))
+         (first (car comments)))
+    (let-alist node
+      (make-tether-thread
+       :id .id :path .path :line .line :start-line .startLine
+       :side (if (equal .diffSide "LEFT") 'left 'right)
+       :original-line .originalLine
+       :original-sha (alist-get 'oid (alist-get 'originalCommit first))
+       :diff-hunk (alist-get 'diffHunk first)
+       :resolved .isResolved
+       :outdated .isOutdated
+       :comments (mapcar (lambda (comment)
+                           (let-alist comment
+                             (list :author .author.login :created .createdAt
+                                   :body .body :url .url)))
+                         comments)))))
+
+(cl-defmethod tether--fetch-threads ((repo forge-github-repository) ctx done)
+  "Fetch the review threads of CTX's pull request on GitHub REPO; call DONE."
+  (tether--query-async
+   repo tether-github--threads-query
+   `((owner . ,(oref repo owner))
+     (name . ,(oref repo name))
+     (number . ,(oref (tether-context-pullreq ctx) number)))
+   (lambda (result)
+     (funcall done
+              (if (plist-get result :ok)
+                  (let-alist (plist-get result :value)
+                    (list :ok t :threads (mapcar #'tether-github--thread
+                                                 .repository.pullRequest.reviewThreads)))
+                result)))))
+
 (cl-defmethod tether--pullreq-ref ((_repo forge-github-repository) number)
   "Return GitHub's ref for the head of pull request NUMBER."
   (format "refs/pull/%d/head" number))

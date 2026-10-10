@@ -53,7 +53,8 @@
   base-ref      ; target branch name
   diff-refs     ; plist returned by `tether--fetch-diff-refs'
   maps          ; hash: path -> line map (step 3)
-  threads       ; review threads, nil until fetched (P2)
+  threads       ; list of `tether-thread'
+  threads-state ; nil (not fetched), loading, done or error
   checked-out   ; non-nil when the current branch is the PR's
   head-state    ; (STATE COUNT): same, behind, ahead, other or none
   local-head    ; HEAD when resolved, to notice it moving
@@ -359,6 +360,18 @@ PICK, read the pull request instead of using the current one."
 
 ;;;; Commands
 
+(defun tether--threads-note (ctx)
+  "Return what to say about the review threads of CTX, or nil."
+  (pcase (tether-context-threads-state ctx)
+    ('done (let ((open (seq-count (lambda (thread)
+                                   (not (or (tether-thread-resolved thread)
+                                            (tether-thread-outdated thread))))
+                                 (tether-context-threads ctx))))
+             (format "%s open thread%s" (if (zerop open) "no" open)
+                     (if (= open 1) "" "s"))))
+    ('loading "threads still fetching")
+    ('error "threads could not be fetched")))
+
 (defun tether--describe (ctx)
   "Return a one-line description of CTX."
   (let* ((repo (tether-context-repo ctx))
@@ -369,26 +382,38 @@ PICK, read the pull request instead of using the current one."
                    (oref pullreq title)
                    (substring (tether-context-base-sha ctx) 0 7)
                    (substring (tether-context-head-sha ctx) 0 7))
-           (or (tether--notes ctx)
-               (list (if (tether-context-checked-out ctx)
-                         "checked out"
-                       "not checked out"))))
+           (append (or (tether--notes ctx)
+                       (list (if (tether-context-checked-out ctx)
+                                 "checked out"
+                               "not checked out")))
+                   (delq nil (list (tether--threads-note ctx)))))
      "; ")))
+
+(defun tether--wait-for-threads (ctx)
+  "Wait, at most `tether-request-timeout' seconds, for CTX's threads."
+  (let ((deadline (+ (float-time) tether-request-timeout)))
+    (while (and (eq (tether-context-threads-state ctx) 'loading)
+                (< (float-time) deadline))
+      (accept-process-output nil 0.05))))
 
 ;;;###autoload
 (defun tether-show-context (&optional pick)
   "Show the pull request of the current buffer and its commits.
 With prefix argument PICK, choose the pull request."
   (interactive "P")
-  (message "Tether: %s" (tether--describe (tether-context t pick))))
+  (let ((ctx (tether-context t pick)))
+    (tether--wait-for-threads ctx)
+    (message "Tether: %s" (tether--describe ctx))))
 
 ;;;###autoload
 (defun tether-refresh (&optional pick)
   "Resolve the pull request of the current buffer again.
 With prefix argument PICK, choose the pull request."
   (interactive "P")
-  (let ((tether--refreshing t))
-    (message "Tether: %s" (tether--describe (tether-context t pick)))))
+  (let* ((tether--refreshing t)
+         (ctx (tether-context t pick)))
+    (tether--wait-for-threads ctx)
+    (message "Tether: %s" (tether--describe ctx))))
 
 ;;;###autoload
 (defun tether-clear-cache ()

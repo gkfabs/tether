@@ -30,6 +30,8 @@ Answers GitHub and GitLab requests, with no pending review."
       (cond
        ((tether-test-graphql-operation request)
         '(:value ((repository (pullRequest (reviews (nodes)))))))
+       ((and (equal method "GET") (string-suffix-p "/discussions" resource))
+        '(:value nil))
        ((and (equal method "GET") (string-prefix-p "/projects/" resource))
         `(:value ((target_branch . "main")
                   (diff_refs . ((base_sha . ,(magit-merge-base main2 head))
@@ -75,8 +77,10 @@ Answers GitHub and GitLab requests, with no pending review."
   (forward-line (1- line)))
 
 (defun tether-comment-test--payload ()
-  "Return the payload of the last request."
-  (plist-get (car tether-test-requests) :payload))
+  "Return the payload of the last request that had one.
+Sending is followed by fetching the threads again."
+  (seq-some (lambda (request) (plist-get request :payload))
+            tether-test-requests))
 
 (ert-deftest tether-comment-test-nitpick ()
   "The editor opens on the checked line, shows the hunk, and posts."

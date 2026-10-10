@@ -28,6 +28,7 @@
 (require 'tether-context)
 (require 'tether-lines)
 (require 'tether-nav)
+(require 'tether-threads)
 (require 'diff-mode)
 (require 'markdown-mode)
 
@@ -283,6 +284,7 @@ When posting fails the editor stays open, saying why."
                                              target body)))
           (setq tether-comment--sent t)
           (tether-comment--close)
+          (tether-fetch-threads ctx)
           (message "Tether: %s%s" (plist-get result :message)
                    (if-let* ((url (plist-get result :url)))
                        (concat " — " url)

@@ -37,6 +37,8 @@ branch.BRANCH.pullRequest git config.  The cache starts empty and
 missing commits are fetched without asking."
   (declare (indent 2) (debug t))
   `(let ((tether--contexts (make-hash-table :test #'equal))
+         ;; Resolution only: no thread fetch after it.
+         (tether-context-functions nil)
          (tether--offered-branches nil)
          (tether-auto-fetch t)
          (repo ,repo)

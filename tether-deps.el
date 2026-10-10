@@ -61,7 +61,12 @@
     magit-rev-ancestor-p
     magit-rev-parse
     magit-rev-verify
+    magit-insert-heading
+    magit-insert-section
     magit-section-match
+    magit-section-mode
+    magit-section-show
+    magit-section-value-if
     magit-split-branch-name
     magit-status-setup-buffer
     magit-toplevel)
@@ -69,6 +74,7 @@
 
 (defconst tether--external-variables
   '(ghub-response-headers
+    magit-section-mode-map
     magit-blob-mode-hook
     magit-buffer-diff-range
     magit-post-refresh-hook
@@ -88,7 +94,8 @@
   "Classes tether dispatches on, each followed by the slots it reads.")
 
 (defconst tether--external-other
-  '(forge-topic-mode magit-mode magit-diff-mode ghub-error)
+  '(forge-topic-mode magit-mode magit-diff-mode magit-status-mode ghub-error
+    magit-section)                      ; the feature, for `require'
   "Other symbols tether names: modes for `derived-mode-p', error symbols.")
 
 (defconst tether--external-keyword-args

@@ -13,6 +13,7 @@
 
 ;;; Code:
 
+(require 'seq)
 (require 'tether-client)
 
 (defun tether-gitlab--merge-request (repo number &optional suffix)
@@ -102,6 +103,54 @@ A comment on the whole file is a general note naming the file."
       (list :url (tether-gitlab--note-url repo number note)
             :message (format "commented on %s (!%d)"
                              (tether--target-label target) number)))))
+
+;;;; Threads
+
+(defun tether-gitlab--thread (repo number discussion)
+  "Return the `tether-thread' of DISCUSSION on merge request NUMBER of REPO.
+Return nil for a discussion that is not on a line of the diff."
+  (let* ((notes (seq-remove (lambda (note) (alist-get 'system note))
+                            (alist-get 'notes discussion)))
+         (first (car notes))
+         (position (alist-get 'position first)))
+    (when (and position (equal (alist-get 'type first) "DiffNote"))
+      (let-alist position
+        (let ((right (and .new_line t)))
+          (make-tether-thread
+           :id (alist-get 'id discussion)
+           :path (or .new_path .old_path)
+           :line (if right .new_line .old_line)
+           :side (if right 'right 'left)
+           :start-line (let-alist .line_range
+                         (and (or .start.new_line .start.old_line)
+                              (if right .start.new_line .start.old_line)))
+           :head-sha .head_sha
+           :original-line (if right .new_line .old_line)
+           :original-sha .head_sha
+           :resolved (alist-get 'resolved first)
+           :comments (mapcar (lambda (note)
+                               (let-alist note
+                                 (list :author .author.username
+                                       :created .created_at :body .body
+                                       :url (tether-gitlab--note-url
+                                             repo number .id))))
+                             notes)))))))
+
+(cl-defmethod tether--fetch-threads ((repo forge-gitlab-repository) ctx done)
+  "Fetch the discussions of CTX's merge request on GitLab REPO; call DONE."
+  (let ((number (oref (tether-context-pullreq ctx) number)))
+    (tether--call-async
+     repo "GET" (tether-gitlab--merge-request repo number "/discussions")
+     (lambda (result)
+       (funcall done
+                (if (plist-get result :ok)
+                    (list :ok t
+                          :threads (delq nil (mapcar (lambda (discussion)
+                                                       (tether-gitlab--thread
+                                                        repo number discussion))
+                                                     (plist-get result :value))))
+                  result)))
+     :unpaginate t)))
 
 (cl-defmethod tether--pullreq-ref ((_repo forge-gitlab-repository) number)
   "Return GitLab's ref for the head of merge request NUMBER."
