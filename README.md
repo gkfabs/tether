@@ -93,6 +93,13 @@ fringe mark and the start of the discussion at the end of the line
 the open ones (`!540·3`). The thread list keeps outdated threads apart,
 with the hunk they were written on.
 
+Magit's commit buffer (`RET` on a commit in the log) shows the threads too,
+in full under their line, when the commit belongs to a pull request tether
+resolved: the threads written on that commit, and those whose line has not
+changed since. Comments from there go on that commit, as with
+`tether-review-commit`. `tether-diff-thread-comments` set to nil shows
+only the start of each thread.
+
 A draft review lives on the forge: GitHub's pending review, GitLab's draft
 notes, so one started in the web interface works too. The mode line shows
 its drafts (`!540✎3`). On GitLab, a change request makes you a reviewer if

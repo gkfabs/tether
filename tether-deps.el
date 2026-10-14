@@ -83,6 +83,7 @@
     magit-blob-mode-hook
     magit-buffer-diff-range
     magit-post-refresh-hook
+    magit-refresh-buffer-hook
     magit-root-section)
   "Variables tether reads or hooks into from magit, forge and ghub.")
 

@@ -43,6 +43,13 @@
   :type 'boolean
   :group 'tether)
 
+(defcustom tether-diff-thread-comments t
+  "Whether magit commit buffers show review threads in full.
+Under their line.  When nil, they show as in files: the start of the
+thread at the end of its line.  Resolved threads always show that way."
+  :type 'boolean
+  :group 'tether)
+
 (defcustom tether-cycle-across-files t
   "Whether `tether-next-thread' goes on to the next file's threads."
   :type 'boolean
@@ -115,6 +122,10 @@ GitLab gives the commit a discussion's position is on."
 (defun tether-fetch-threads (ctx)
   "Fetch the review threads of CTX's pull request in the background.
 When they arrive, if CTX is still current, run `tether-threads-functions'."
+  ;; A single-commit context is never current: its pull request's
+  ;; context holds the threads.
+  (when (tether-context-commit ctx)
+    (setq ctx (or (gethash (tether--context-key ctx) tether--contexts) ctx)))
   (setf (tether-context-threads-state ctx) 'loading)
   (tether--fetch-threads
    (tether-context-repo ctx) ctx
@@ -162,7 +173,7 @@ Resolved threads count only when `tether-show-resolved' is non-nil."
   "Return the author and first line of THREAD's first comment."
   (let ((first (car (tether-thread-comments thread))))
     (format "%s: %s" (plist-get first :author)
-            (car (split-string (or (plist-get first :body) "") "\n")))))
+            (car (split-string (or (plist-get first :body) "") "\r?\n")))))
 
 (defun tether--thread-summary (thread)
   "Return the text shown at the end of THREAD's line."
@@ -203,6 +214,164 @@ Resolved threads count only when `tether-show-resolved' is non-nil."
                                        'face 'tether-thread-summary)))
             (push overlay tether--thread-overlays)))))))
 
+;;;; In magit commit buffers
+
+(defun tether--diff-line-position (path side line)
+  "Return the start of LINE of PATH in the current diff buffer, or nil.
+LINE is on the new side of the diff when SIDE is `right', on the old
+side when it is `left'."
+  (when-let* ((file (seq-find (lambda (section)
+                                (and (magit-section-match 'file section)
+                                     (equal (oref section value) path)))
+                              (oref magit-root-section children))))
+    (seq-some
+     (lambda (hunk)
+       (pcase-let ((`(,start ,len) (if (eq side 'left)
+                                       (oref hunk from-range)
+                                     (oref hunk to-range))))
+         (when (and (<= start line) (< line (+ start (max len 1))))
+           (save-excursion
+             (goto-char (oref hunk content))
+             (let ((old (car (oref hunk from-range)))
+                   (new (car (oref hunk to-range)))
+                   found)
+               (while (and (not found) (< (point) (oref hunk end)))
+                 (let ((kind (pcase (char-after)
+                               (?+ :added) (?- :removed) (?\\ :marker)
+                               (_ :context))))
+                   (when (and (not (eq kind :marker))
+                              (if (eq side 'left)
+                                  (and (not (eq kind :added)) (= old line))
+                                (and (not (eq kind :removed)) (= new line))))
+                     (setq found (point)))
+                   (unless (memq kind '(:added :marker)) (cl-incf old))
+                   (unless (memq kind '(:removed :marker)) (cl-incf new)))
+                 (forward-line 1))
+               found)))))
+     (seq-filter (lambda (section) (magit-section-match 'hunk section))
+                 (oref file children)))))
+
+(defun tether--head-to-commit-drift (ctx head path)
+  "Return the drift of PATH from the PR HEAD to CTX's commit, cached."
+  (let ((key (cons :head-drift path))
+        (maps (tether-context-maps ctx)))
+    (pcase (gethash key maps 'none)
+      ('none (puthash key
+                      (let ((default-directory (tether-context-toplevel ctx)))
+                        (tether-diff-parse-drift
+                         (tether--git-diff "-U0" head (tether-context-commit ctx)
+                                           "--" path)))
+                      maps))
+      (drift drift))))
+
+(defun tether--commit-thread-line (ctx head thread)
+  "Return (SIDE . LINE) of THREAD in the diff of CTX's commit, or nil.
+HEAD is the PR head.  A thread written on the commit is where it was
+written; the others follow their head line back to the commit, when
+it did not change since."
+  (let ((side (tether-thread-side thread)))
+    (cond
+     ((equal (tether-thread-original-sha thread) (tether-context-commit ctx))
+      (and (tether-thread-original-line thread)
+           (cons side (tether-thread-original-line thread))))
+     ((and (eq side 'right) (tether-thread-line thread)
+           (not (tether-thread-outdated thread)))
+      (when-let* ((line (tether-diff-drift-to
+                         (tether--head-to-commit-drift ctx head
+                                                       (tether-thread-path thread))
+                         (tether-thread-line thread))))
+        (cons 'right line))))))
+
+(defun tether--thread-comments-text (thread)
+  "Return THREAD's comments as lines to show under its line."
+  (let ((bar (propertize "  ▎ " 'face 'tether-thread)))
+    (mapconcat
+     (lambda (comment)
+       (let ((lines (split-string (string-trim (or (plist-get comment :body) ""))
+                                  "\r?\n")))
+         (concat "\n" bar
+                 (propertize (or (plist-get comment :author) "?") 'face 'bold)
+                 ": " (car lines)
+                 (mapconcat (lambda (line) (concat "\n" bar "  " line))
+                            (cdr lines) ""))))
+     (tether-thread-comments thread) "")))
+
+(defun tether--clear-diff-threads ()
+  "Remove the review threads drawn in the current diff buffer.
+Found by their property, not a variable: magit resets the buffer's
+variables when it shows the buffer again."
+  (save-restriction
+    (widen)
+    (remove-overlays (point-min) (point-max) 'tether-diff-thread t)))
+
+(defun tether--draw-diff-thread (thread)
+  "Draw THREAD on the diff line at point."
+  (let ((overlay (make-overlay (line-beginning-position) (line-end-position)))
+        (resolved (tether-thread-resolved thread)))
+    (overlay-put overlay 'tether-diff-thread t)
+    (overlay-put overlay 'tether-thread thread)
+    (overlay-put overlay 'priority 10)
+    (overlay-put overlay 'help-echo (tether--thread-first-line thread))
+    (when (display-graphic-p)
+      (overlay-put overlay 'before-string
+                   (propertize " " 'display
+                               `(left-fringe tether-thread
+                                             ,(if resolved 'tether-thread-resolved
+                                                'tether-thread)))))
+    (overlay-put overlay 'after-string
+                 (if (and tether-diff-thread-comments (not resolved))
+                     (tether--thread-comments-text thread)
+                   (propertize (tether--thread-summary thread)
+                               'face 'tether-thread-summary)))))
+
+(defun tether--revision-context (sha)
+  "Return the cached context of a pull request with commit SHA, or nil."
+  (when-let* ((toplevel (magit-toplevel)))
+    (catch 'found
+      (maphash (lambda (key ctx)
+                 (when (and (equal (car key) toplevel)
+                            (tether--context-fresh-p ctx)
+                            (tether--pr-commit-p ctx sha))
+                   (throw 'found ctx)))
+               tether--contexts)
+      nil)))
+
+(defun tether--update-revision-threads ()
+  "Show the review threads in a magit commit buffer.
+Only for a commit of a pull request tether already resolved; comments
+from the buffer then target that commit, as from `tether-review-commit'.
+Never makes a request."
+  (when (derived-mode-p 'magit-revision-mode)
+    (with-demoted-errors "Tether: %S"
+      (tether--clear-diff-threads)
+      (let* ((sha (and magit-buffer-revision
+                       (magit-rev-parse (concat magit-buffer-revision "^{commit}"))))
+             (pr-ctx (and sha (tether--revision-context sha))))
+        (if (not pr-ctx)
+            (progn (kill-local-variable 'tether--buffer-pullreq)
+                   (kill-local-variable 'tether--buffer-commit))
+          (setq-local tether--buffer-pullreq (oref (tether-context-pullreq pr-ctx) id))
+          (setq-local tether--buffer-commit sha)
+          (when (eq (tether-context-threads-state pr-ctx) 'done)
+            (let ((ctx (tether--commit-context pr-ctx sha))
+                  (head (tether-context-head-sha pr-ctx)))
+              (dolist (thread (tether-context-threads pr-ctx))
+                (when-let* (((or tether-show-resolved
+                                 (not (tether-thread-resolved thread))))
+                            (at (tether--commit-thread-line ctx head thread))
+                            (pos (tether--diff-line-position
+                                  (tether-thread-path thread) (car at) (cdr at))))
+                  (save-excursion
+                    (goto-char pos)
+                    (tether--draw-diff-thread thread)))))))))))
+
+(defun tether--refresh-revision-buffers ()
+  "Show the review threads again in every magit commit buffer."
+  (dolist (buffer (buffer-list))
+    (with-current-buffer buffer
+      (when (derived-mode-p 'magit-revision-mode)
+        (tether--update-revision-threads)))))
+
 ;;;; Going from thread to thread
 
 (defun tether--thread-after-p (thread path line)
@@ -211,8 +380,41 @@ Resolved threads count only when `tether-show-resolved' is non-nil."
     (or (string< path other)
         (and (equal path other) (> (tether-thread-line thread) line)))))
 
+(defun tether--go-to-diff-thread (forward)
+  "In a magit commit buffer, go to the next thread drawn in it.
+Or the previous one unless FORWARD.  Shows its hunk if collapsed."
+  (let* ((starts (sort (delete-dups
+                        (mapcar #'overlay-start
+                                (seq-filter (lambda (overlay)
+                                              (overlay-get overlay 'tether-diff-thread))
+                                            (overlays-in (point-min) (point-max)))))
+                       #'<))
+         (pos (or (if forward
+                      (seq-find (lambda (start) (> start (line-end-position))) starts)
+                    (car (last (seq-filter (lambda (start)
+                                             (< start (line-beginning-position)))
+                                           starts))))
+                  (user-error "Tether: no %s review thread in this commit"
+                              (if forward "next" "previous")))))
+    (goto-char pos)
+    (when (invisible-p pos)
+      (let ((hunk (magit-current-section)))
+        (magit-section-show hunk)
+        (when-let* ((file (oref hunk parent)))
+          (magit-section-show file))))
+    (when-let* ((thread (seq-some (lambda (overlay) (overlay-get overlay 'tether-thread))
+                                  (overlays-at pos))))
+      (message "Tether: %s" (tether--thread-first-line thread)))))
+
 (defun tether--go-to-thread (forward)
-  "Go to the next thread, or the previous one unless FORWARD."
+  "Go to the next thread, or the previous one unless FORWARD.
+In a magit commit buffer, only to the threads shown there."
+  (if (derived-mode-p 'magit-revision-mode)
+      (tether--go-to-diff-thread forward)
+    (tether--go-to-thread-1 forward)))
+
+(defun tether--go-to-thread-1 (forward)
+  "Go to the next thread of the PR, or the previous one unless FORWARD."
   (let* ((ctx (tether-context t))
          (threads (or (tether--placed-threads ctx)
                       (user-error "Tether: no review thread to go to%s"
@@ -242,13 +444,15 @@ Resolved threads count only when `tether-show-resolved' is non-nil."
 
 ;;;###autoload
 (defun tether-next-thread ()
-  "Go to the next review thread of the pull request."
+  "Go to the next review thread of the pull request.
+In a magit commit buffer, to the next one shown in it."
   (interactive)
   (tether--go-to-thread t))
 
 ;;;###autoload
 (defun tether-previous-thread ()
-  "Go to the previous review thread of the pull request."
+  "Go to the previous review thread of the pull request.
+In a magit commit buffer, to the previous one shown in it."
   (interactive)
   (tether--go-to-thread nil))
 
@@ -386,7 +590,8 @@ fetches the threads again.
 (declare-function tether-show-thread "tether-comment")
 
 (defun tether--threads-arrived (ctx)
-  "Show the threads of CTX in its thread list, if open."
+  "Show the threads of CTX in its thread list and magit commit buffers."
+  (tether--refresh-revision-buffers)
   (dolist (buffer (buffer-list))
     (with-current-buffer buffer
       (when (and (derived-mode-p 'tether-threads-mode)
@@ -509,13 +714,14 @@ current line."
 
 ;;;###autoload
 (defun tether-toggle-resolved ()
-  "Show or hide resolved review threads in file buffers."
+  "Show or hide resolved review threads in file and magit commit buffers."
   (interactive)
   (setq tether-show-resolved (not tether-show-resolved))
   (dolist (buffer (buffer-list))
     (with-current-buffer buffer
       (when (bound-and-true-p tether-mode)
         (tether--refresh-buffer))))
+  (tether--refresh-revision-buffers)
   (message "Tether: resolved threads %s" (if tether-show-resolved "shown" "hidden")))
 
 ;;;###autoload

@@ -70,8 +70,23 @@ The plist has :path, :old-path, :kind (:context, :added or :removed),
                   :new (and (not (eq kind :removed)) new)
                   :hunk hunk)))))))
 
+(defun tether--pr-commit-p (ctx sha)
+  "Return non-nil if SHA is one of the commits of CTX's pull request."
+  (let ((default-directory (tether-context-toplevel ctx)))
+    (and (magit-rev-ancestor-p sha (tether-context-head-sha ctx))
+         (not (magit-rev-ancestor-p sha (tether-context-base-sha ctx))))))
+
 (defun tether--diff-range-of-pr-p (ctx)
-  "Return non-nil if the current magit diff buffer is CTX's PR diff."
+  "Return non-nil if the current magit diff buffer is CTX's PR diff.
+A magit commit buffer is, when CTX reviews that commit alone."
+  (if (derived-mode-p 'magit-revision-mode)
+      (and (tether-context-commit ctx) magit-buffer-revision
+           (equal (magit-rev-parse (concat magit-buffer-revision "^{commit}"))
+                  (tether-context-head-sha ctx)))
+    (tether--diff-range-p ctx)))
+
+(defun tether--diff-range-p (ctx)
+  "Return non-nil if the current diff buffer's range is CTX's diff."
   (when-let* ((range (and (boundp 'magit-buffer-diff-range)
                           magit-buffer-diff-range))
               ((stringp range))
@@ -235,8 +250,7 @@ behavior that may change."
          (default-directory (tether-context-toplevel ctx))
          (sha (or (magit-rev-parse (concat commit "^{commit}"))
                   (user-error "Tether: no commit %s" commit))))
-    (unless (and (magit-rev-ancestor-p sha (tether-context-head-sha ctx))
-                 (not (magit-rev-ancestor-p sha (tether-context-base-sha ctx))))
+    (unless (tether--pr-commit-p ctx sha)
       (user-error "Tether: %s is not one of the commits of %s" (substring sha 0 7)
                   (tether--label (tether-context-repo ctx)
                                  (oref (tether-context-pullreq ctx) number))))

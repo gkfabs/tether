@@ -367,6 +367,7 @@ are in the `tether' menu and `tether-prefix-map'.
       (progn
         (add-hook 'after-save-hook #'tether--refresh-buffer nil t)
         (add-hook 'magit-post-refresh-hook #'tether--magit-refreshed)
+        (add-hook 'magit-refresh-buffer-hook #'tether--update-revision-threads)
         (tether--refresh-buffer))
     (remove-hook 'after-save-hook #'tether--refresh-buffer t)
     (tether--clear-fringe)
