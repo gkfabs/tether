@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Fabien Carrion
 
 ;; Author: Fabien Carrion <fabien@carrion.mx>
+;; Assisted-by: Claude:claude-opus-5-5
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; This file is not part of GNU Emacs.
@@ -174,8 +175,7 @@ ANCHOR is the part after #, if any."
                    (tether--parse-pullreq-url (string-trim text))))
             (list (thing-at-point 'url t) (car kill-ring))))
 
-(defvar tether--url-thread-hook nil
-  "Function to call once with the context of `tether-review-url'.")
+(declare-function tether--open-thread "tether-comment" (ctx thread))
 
 ;;;###autoload
 (defun tether-review-url (url)
@@ -216,15 +216,17 @@ run `forge-pull'" (tether--label repo number))))
                                           (or (plist-get comment :url) "")))
                                        (tether-thread-comments thread)))
                            (tether-context-threads ctx))))
-        (when tether--url-thread-hook
-          (funcall tether--url-thread-hook ctx thread))))))
+        ;; Not at load time: tether-comment requires this file.
+        (require 'tether-comment)
+        (tether--open-thread ctx thread)))))
 
 ;;;###autoload
 (defun tether-review-commit (commit)
   "Review COMMIT alone: show its diff, where comments target it.
 COMMIT is the one at point in magit, or read.  It must be one of the
-pull request's commits.  Experimental: neither GitHub nor GitLab
-documents comments on a commit that is not the PR head."
+pull request's commits.  Neither GitHub nor GitLab documents
+comments on a commit that is not the PR head, so this relies on
+behavior that may change."
   (interactive
    (list (or (magit-commit-at-point)
              (and (derived-mode-p 'magit-revision-mode) magit-buffer-revision)
@@ -239,7 +241,7 @@ documents comments on a commit that is not the PR head."
                   (tether--label (tether-context-repo ctx)
                                  (oref (tether-context-pullreq ctx) number))))
     (tether--show-diff (tether--commit-context ctx sha))
-    (message "Tether: reviewing commit %s of %s alone (experimental)"
+    (message "Tether: reviewing commit %s of %s alone"
              (substring sha 0 7)
              (tether--label (tether-context-repo ctx)
                             (oref (tether-context-pullreq ctx) number)))))

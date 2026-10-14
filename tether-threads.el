@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Fabien Carrion
 
 ;; Author: Fabien Carrion <fabien@carrion.mx>
+;; Assisted-by: Claude:claude-opus-5-5
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; This file is not part of GNU Emacs.

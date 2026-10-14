@@ -3,10 +3,11 @@
 ;; Copyright (C) 2026 Fabien Carrion
 
 ;; Author: Fabien Carrion <fabien@carrion.mx>
+;; Assisted-by: Claude:claude-opus-5-5
 ;; Maintainer: Fabien Carrion <fabien@carrion.mx>
 ;; URL: https://github.com/gkfabs/tether
 ;; Keywords: tools, vc
-;; Version: 0.1.0-snapshot
+;; Version: 0.1.0
 ;; Package-Requires: ((emacs "29.1") (compat "31.0") (magit "4.6") (forge "0.6") (ghub "5.3") (transient "0.10") (markdown-mode "2.7"))
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -56,7 +57,7 @@
   :group 'tools
   :link '(url-link "https://github.com/gkfabs/tether"))
 
-(defconst tether-version "0.1.0-snapshot"
+(defconst tether-version "0.1.0"
   "Version of the tether package.")
 
 (defcustom tether-show-commentable t
@@ -246,7 +247,7 @@ modes, so bind `tether-prefix-map' where you like.")
 
 (defun tether--menu-description ()
   "Return the heading of the `tether' menu."
-  (if-let* ((ctx (ignore-errors (tether-context))))
+  (if-let* ((ctx (condition-case nil (tether-context) (user-error nil))))
       (let ((pullreq (tether-context-pullreq ctx)))
         (format "Tether  %s %s  (head %s)"
                 (tether--label (tether-context-repo ctx) (oref pullreq number))
@@ -291,9 +292,10 @@ modes, so bind `tether-prefix-map' where you like.")
 
 (defun tether--add-to-dispatch (prefix after)
   "Add tether on @ to the transient PREFIX, after the suffix on AFTER."
-  (unless (ignore-errors (transient-get-suffix prefix "@"))
-    (ignore-errors
-      (transient-append-suffix prefix after '("@" "Tether" tether)))))
+  (unless (condition-case nil (transient-get-suffix prefix "@") (error nil))
+    ;; When AFTER moved, transient says so unless
+    ;; `transient-error-on-insert-failure' asks for an error.
+    (transient-append-suffix prefix after '("@" "Tether" tether))))
 
 (when tether-add-to-dispatch
   (tether--add-to-dispatch 'magit-dispatch "N")
@@ -341,7 +343,7 @@ Also start fetching its review threads."
       (with-current-buffer buffer
         (when (tether--under-p toplevel)
           (cond ((and tether-mode (not tether--buffer-pullreq)
-                      (not (ignore-errors (tether--buffer-pr))))
+                      (not (with-demoted-errors "Tether: %S" (tether--buffer-pr))))
                  (tether-mode -1))
                 (tether-mode (tether--refresh-buffer))
                 (global-tether-mode (tether--turn-on))))))))
@@ -379,7 +381,7 @@ no request when a file is opened."
              (or buffer-file-name tether--buffer-pullreq
                  (derived-mode-p 'magit-status-mode))
              (or tether-enable-remote (not (file-remote-p default-directory)))
-             (ignore-errors (tether--buffer-pr)))
+             (with-demoted-errors "Tether: %S" (tether--buffer-pr)))
     (tether-mode 1)))
 
 ;;;###autoload

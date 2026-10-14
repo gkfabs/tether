@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Fabien Carrion
 
 ;; Author: Fabien Carrion <fabien@carrion.mx>
+;; Assisted-by: Claude:claude-opus-5-5
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; This file is not part of GNU Emacs.
@@ -342,7 +343,8 @@ Never prompts and never makes a request."
   (when-let* ((toplevel (magit-toplevel))
               (number
                (if tether--buffer-pullreq
-                   (oref (forge-get-pullreq tether--buffer-pullreq) number)
+                   (and-let* ((pullreq (forge-get-pullreq tether--buffer-pullreq)))
+                     (oref pullreq number))
                  (and-let* ((branch (magit-get-current-branch))
                             (n (magit-get "branch" branch "pullRequest")))
                    (string-to-number n))))

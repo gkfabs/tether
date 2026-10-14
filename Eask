@@ -9,7 +9,7 @@
 ;;   from the GNU and NonGNU ELPA releases.  package.el cannot install
 ;;   an older release of magit, so magit is the latest release there.
 
-(package "tether" "0.1.0-snapshot"
+(package "tether" "0.1.0"
          "Review PRs and MRs from the file you are reading")
 (website-url "https://github.com/gkfabs/tether")
 (keywords "tools" "vc")

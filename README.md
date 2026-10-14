@@ -9,8 +9,10 @@ Built on [Forge](https://github.com/magit/forge): the repository, the pull
 request and the API token all come from Forge, so there is nothing extra to
 configure.
 
-**Status:** early development. Commenting, suggestions, navigation,
-review threads (reply, resolve, delete) and draft reviews work.
+Commenting, suggestions, navigation, review threads (reply, resolve,
+delete), draft reviews and single-commit review work on GitHub and
+GitLab. GitHub Enterprise Server should work too, but is only covered by
+unit tests.
 
 ## Requirements
 
@@ -18,14 +20,22 @@ review threads (reply, resolve, delete) and draft reviews work.
 - Forge set up for the repository (`forge-add-repository`), with its token
   in your auth-source, and its pull requests pulled (`forge-pull`)
 
+## Installation
+
+From [MELPA](https://melpa.org/): `M-x package-install RET tether`. Or from
+the repository: `M-x package-vc-install RET https://github.com/gkfabs/tether`.
+
 ## Setup
 
 ```elisp
 (use-package tether
-  :load-path "~/src/tether/"           ; until it is on MELPA
+  :ensure t
   :hook (after-init . global-tether-mode)
   :bind (:map tether-mode-map ("C-c t" . tether-prefix-map)))
 ```
+
+tether binds no key by default: `tether-prefix-map` holds the commands,
+and every one also works from `M-x`.
 
 `global-tether-mode` turns `tether-mode` on in the files of a repository
 whose current branch has a pull request in forge's database. Opening a file
@@ -47,7 +57,7 @@ The `tether` menu (`C-c t @` with the binding above, or `@` in
 | `b` | `tether-browse` | the PR diff in the browser, at the line |
 | `m` | `tether-status` | magit-status |
 | `v` | `tether-review-pullreq` | pick any pull request and open its diff |
-| `C` | `tether-review-commit` | review the commit at point alone (experimental) |
+| `C` | `tether-review-commit` | review the commit at point alone |
 | `u` | `tether-review-url` | review the pull request of a URL copied from the browser; a comment link also shows its thread |
 | `l` | `tether-threads` | the review threads, by file |
 | `.` | `tether-show-thread` | the thread of the current line: every comment, and a reply area below (`tether-reply` is the same) |
@@ -90,6 +100,15 @@ you are not one (tether asks first), and tether checks it was recorded.
 
 On GitHub, while you have a pending review (started on github.com),
 comments are added to it: GitHub refuses single comments then.
+
+## Related packages
+
+[code-review](https://github.com/wandersoncferreira/code-review),
+[emacs-pr-review](https://github.com/blahgeek/emacs-pr-review) and
+[github-review](https://github.com/charignon/github-review) review in a
+buffer of their own, built from the diff. tether comments from the file
+you are reading, and leaves the repository, the pull request and the token
+to Forge.
 
 ## Tested versions
 

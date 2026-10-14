@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026 Fabien Carrion
 
 ;; Author: Fabien Carrion <fabien@carrion.mx>
+;; Assisted-by: Claude:claude-opus-5-5
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; This file is not part of GNU Emacs.
@@ -426,7 +427,8 @@ in the next comment."
   "Return the logins that can be mentioned in CTX's pull request."
   (delete-dups
    (delq nil (cons (oref (tether-context-pullreq ctx) author)
-                   (ignore-errors
+                   ;; A database query, which may fail: then only the author.
+                   (with-demoted-errors "Tether: no assignees: %S"
                      (mapcar #'cadr (oref (tether-context-repo ctx) assignees)))))))
 
 (defun tether-comment-mention (login)
@@ -548,9 +550,6 @@ a reply below the discussion and send it with `tether-comment-send';
         (tether-comment--show-thread fresh)))))
 
 (add-hook 'tether-threads-functions #'tether-comment--threads-arrived)
-
-;; `tether-review-url' opens the thread a comment link points to.
-(setq tether--url-thread-hook #'tether--open-thread)
 
 ;;;###autoload
 (defun tether-nitpick-file (&optional pick)
