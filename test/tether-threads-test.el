@@ -306,5 +306,17 @@ As when `tether-show-context' runs from magit-status first."
       (should (= (line-number-at-pos) 2))
       (ignore ctx))))
 
+(ert-deftest tether-threads-test-crlf-bodies ()
+  "Comments written with CRLF line ends show without the CR."
+  (let ((thread (make-tether-thread
+                 :id "T" :path "a.el" :line 1 :side 'right
+                 :comments (list (list :author "alice" :body "first\r\nsecond")))))
+    (with-temp-buffer
+      (tether-threads--insert-comments thread)
+      (should-not (string-search "\r" (buffer-string)))
+      (should (string-search "      second\n" (buffer-string))))
+    (should (equal (tether--comment-start (car (tether-thread-comments thread)))
+                   "first"))))
+
 (provide 'tether-threads-test)
 ;;; tether-threads-test.el ends here

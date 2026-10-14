@@ -126,6 +126,12 @@ does not change PATH."
 
 ;;;; Buffer lines and head lines
 
+(defun tether--drift (from to path)
+  "Return the drift of PATH from commit FROM to commit TO.
+To the worktree when TO is nil."
+  (tether-diff-parse-drift
+   (apply #'tether--git-diff "-U0" from (append (and to (list to)) (list "--" path)))))
+
 (defun tether--buffer-drift (file)
   "Return the drift from FILE on disk to the current buffer's text."
   (let ((temp (make-temp-file "tether-buffer-")))
@@ -147,8 +153,7 @@ and has none."
   (unless tether--buffer-pullreq
     (let ((default-directory (tether-context-toplevel ctx)))
       (delq nil
-            (list (tether-diff-parse-drift
-                   (tether--git-diff "-U0" (tether-context-head-sha ctx) "--" path))
+            (list (tether--drift (tether-context-head-sha ctx) nil path)
                   (and (buffer-modified-p) buffer-file-name
                        (tether--buffer-drift buffer-file-name)))))))
 

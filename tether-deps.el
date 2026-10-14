@@ -79,6 +79,7 @@
 (defconst tether--external-variables
   '(ghub-response-headers
     magit-buffer-revision
+    magit-buffer-revision-oid
     magit-section-mode-map
     magit-blob-mode-hook
     magit-buffer-diff-range

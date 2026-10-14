@@ -53,7 +53,9 @@
   head-sha      ; PR head according to the API
   base-ref      ; target branch name
   diff-refs     ; plist returned by `tether--fetch-diff-refs'
-  maps          ; hash: path -> line map (step 3)
+  maps          ; hash: path -> line map (step 3); in a single-commit
+                ; context also (:head-drift . path) -> drift from the
+                ; PR head
   threads       ; list of `tether-thread'
   threads-state ; nil (not fetched), loading, done or error
   review        ; plist (:active :id :drafts) of the user's draft review,

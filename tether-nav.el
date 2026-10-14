@@ -38,6 +38,36 @@
 
 ;;;; Diff buffers
 
+(defun tether--diff-file-section (path)
+  "Return the section of PATH in the current diff buffer, or nil."
+  (seq-find (lambda (section)
+              (and (magit-section-match 'file section)
+                   (equal (oref section value) path)))
+            (oref magit-root-section children)))
+
+(defun tether--hunk-lines (hunk function)
+  "Call FUNCTION on each line of HUNK until it returns non-nil.
+Return that value.  FUNCTION is called with point at the start of the
+line, with its kind (:context, :added or :removed) and its line
+numbers on the old and new sides, nil on the side it is absent from.
+The \"\\ No newline\" marker is not a line: it is skipped."
+  (save-excursion
+    (goto-char (oref hunk content))
+    (let ((old (car (oref hunk from-range)))
+          (new (car (oref hunk to-range)))
+          result)
+      (while (and (not result) (< (point) (oref hunk end)))
+        (let ((kind (pcase (char-after)
+                      (?+ :added) (?- :removed) (?\\ :marker) (_ :context))))
+          (unless (eq kind :marker)
+            (setq result (funcall function kind
+                                  (and (not (eq kind :added)) old)
+                                  (and (not (eq kind :removed)) new)))
+            (unless (eq kind :added) (cl-incf old))
+            (unless (eq kind :removed) (cl-incf new))))
+        (forward-line 1))
+      result)))
+
 (defun tether--diff-line-at (pos)
   "Return what the diff line at POS is, as a plist, or nil.
 The plist has :path, :old-path, :kind (:context, :added or :removed),
@@ -45,30 +75,35 @@ The plist has :path, :old-path, :kind (:context, :added or :removed),
 :hunk, the hunk section.  POS must be on a line of a hunk."
   (save-excursion
     (goto-char pos)
-    (let ((hunk (magit-current-section)))
+    (let ((hunk (magit-current-section))
+          (target (line-beginning-position)))
       (when (and hunk (magit-section-match 'hunk hunk)
-                 (>= (line-beginning-position) (oref hunk content)))
-        (let ((target (line-beginning-position))
-              (old (car (oref hunk from-range)))
-              (new (car (oref hunk to-range)))
-              (file (oref hunk parent))
-              kind)
-          (goto-char (oref hunk content))
-          (while (progn
-                   (setq kind (pcase (char-after)
-                                (?+ :added) (?- :removed) (?\\ :marker)
-                                (_ :context)))
-                   (< (point) target))
-            (unless (memq kind '(:added :marker)) (cl-incf old))
-            (unless (memq kind '(:removed :marker)) (cl-incf new))
-            (forward-line 1))
-          (unless (eq kind :marker)
-            (list :path (oref file value)
-                  :old-path (or (oref file source) (oref file value))
-                  :kind kind
-                  :old (and (not (eq kind :added)) old)
-                  :new (and (not (eq kind :removed)) new)
-                  :hunk hunk)))))))
+                 (>= target (oref hunk content)))
+        (let ((file (oref hunk parent)))
+          (tether--hunk-lines
+           hunk (lambda (kind old new)
+                  (and (= (point) target)
+                       (list :path (oref file value)
+                             :old-path (or (oref file source) (oref file value))
+                             :kind kind :old old :new new :hunk hunk)))))))))
+
+(defun tether--diff-line-position (path side line)
+  "Return the start of LINE of PATH in the current diff buffer, or nil.
+LINE is on the new side of the diff when SIDE is `right', on the old
+side when it is `left'."
+  (when-let* ((file (tether--diff-file-section path)))
+    (seq-some
+     (lambda (hunk)
+       (when (magit-section-match 'hunk hunk)
+         (pcase-let ((`(,start ,len) (if (eq side 'left)
+                                         (oref hunk from-range)
+                                       (oref hunk to-range))))
+           (and (<= start line) (< line (+ start (max len 1)))
+                (tether--hunk-lines
+                 hunk (lambda (_kind old new)
+                        (and (eql (if (eq side 'left) old new) line)
+                             (point))))))))
+     (oref file children))))
 
 (defun tether--pr-commit-p (ctx sha)
   "Return non-nil if SHA is one of the commits of CTX's pull request."
@@ -80,9 +115,8 @@ The plist has :path, :old-path, :kind (:context, :added or :removed),
   "Return non-nil if the current magit diff buffer is CTX's PR diff.
 A magit commit buffer is, when CTX reviews that commit alone."
   (if (derived-mode-p 'magit-revision-mode)
-      (and (tether-context-commit ctx) magit-buffer-revision
-           (equal (magit-rev-parse (concat magit-buffer-revision "^{commit}"))
-                  (tether-context-head-sha ctx)))
+      (and (tether-context-commit ctx)
+           (equal magit-buffer-revision-oid (tether-context-head-sha ctx)))
     (tether--diff-range-p ctx)))
 
 (defun tether--diff-range-p (ctx)
@@ -101,24 +135,11 @@ A magit commit buffer is, when CTX reviews that commit alone."
 (defun tether--diff-goto (path line)
   "In the current diff buffer, go to head LINE of PATH, or to PATH.
 Return non-nil when LINE was found."
-  (when-let* ((file (seq-find (lambda (section)
-                                (and (magit-section-match 'file section)
-                                     (equal (oref section value) path)))
-                              (oref magit-root-section children))))
-    (goto-char (oref file start))
-    (when-let* ((line)
-                (hunk (seq-find
-                       (lambda (hunk)
-                         (pcase-let ((`(,start ,len) (oref hunk to-range)))
-                           (and (<= start line) (< line (+ start (max len 1))))))
-                       (oref file children))))
-      (goto-char (oref hunk content))
-      (let ((new (car (oref hunk to-range))))
-        (while (and (< (point) (oref hunk end))
-                    (or (eq (char-after) ?-) (< new line)))
-          (unless (eq (char-after) ?-) (cl-incf new))
-          (forward-line 1)))
-      t)))
+  (if-let* ((pos (and line (tether--diff-line-position path 'right line))))
+      (progn (goto-char pos) t)
+    (when-let* ((file (tether--diff-file-section path)))
+      (goto-char (oref file start))
+      nil)))
 
 ;;;; Where point is
 

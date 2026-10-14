@@ -320,13 +320,32 @@ The PR's threads:
 (ert-deftest tether-nav-test-commit-threads-other-commit ()
   "A commit outside the PR: no threads, and no ties to the PR."
   (tether-nav-test-with-commit-threads (tether-test-gitlab-repo)
-    (set-buffer (magit-revision-setup-buffer pr1 nil nil))
-    (should (tether-nav-test--drawn))
-    ;; The same buffer, moved to another commit.
-    (set-buffer (magit-revision-setup-buffer main2 nil nil))
-    (should-not tether--buffer-pullreq)
-    (should-not tether--buffer-commit)
-    (should-not (tether-nav-test--drawn))))
+    ;; As `global-tether-mode' does, on each run of the major mode.
+    (let ((global-tether-mode t)
+          (after-change-major-mode-hook (list #'tether--turn-on)))
+      (set-buffer (magit-revision-setup-buffer pr1 nil nil))
+      (should (tether-nav-test--drawn))
+      (should tether-mode)
+      ;; The same buffer, moved to another commit.
+      (set-buffer (magit-revision-setup-buffer main2 nil nil))
+      (should-not tether--buffer-pullreq)
+      (should-not tether--buffer-commit)
+      (should-not tether-mode)
+      (should-not (tether-nav-test--drawn)))))
+
+(ert-deftest tether-nav-test-commit-threads-merge ()
+  "A merge commit of the PR is left alone: magit shows a combined diff."
+  (tether-nav-test-with-commit-threads (tether-test-gitlab-repo)
+    (tether-test-git "checkout" "-q" "-b" "feature" head)
+    (tether-test-git "merge" "-q" "--no-ff" "--no-edit" "origin/main")
+    (let ((merge (tether-test-git "rev-parse" "HEAD")))
+      (setf (tether-context-head-sha ctx) merge
+            (tether-context-local-head ctx) merge
+            (tether-context-local-branch ctx) "feature")
+      (should (tether--pr-commit-p ctx merge))
+      (set-buffer (magit-revision-setup-buffer merge nil nil))
+      (should-not tether--buffer-commit)
+      (should-not (tether-nav-test--drawn)))))
 
 (ert-deftest tether-nav-test-commit-threads-comment ()
   "A comment from magit's commit buffer targets that commit."
@@ -356,6 +375,17 @@ The PR's threads:
       (tether-fetch-threads (tether-context t)))
     (should (equal (mapcar #'tether-thread-id (tether-context-threads ctx)) '("T9")))
     (should (equal (tether-nav-test--drawn-ids) '(("+TWO" "T9"))))))
+
+(ert-deftest tether-nav-test-commit-threads-refetch-evicted ()
+  "Without its PR's context, a commit's context fetches nothing."
+  (tether-nav-test-with-commit-threads (tether-test-gitlab-repo)
+    (set-buffer (magit-revision-setup-buffer pr1 nil nil))
+    (let ((commit-ctx (tether-context t)))
+      (clrhash tether--contexts)
+      (cl-letf (((symbol-function 'tether--fetch-threads)
+                 (lambda (&rest _) (error "Fetched"))))
+        (tether-fetch-threads commit-ctx))
+      (should (eq (tether-context-threads-state commit-ctx) 'done)))))
 
 ;;;; tether-mode
 
@@ -395,7 +425,11 @@ The PR's threads:
 (ert-deftest tether-nav-test-menu ()
   (should (commandp 'tether))
   (with-temp-buffer
-    (should (equal (tether--menu-description) "Tether"))))
+    (should (equal (tether--menu-description) "Tether"))
+    ;; Looking up the context failed: the menu opens all the same.
+    (cl-letf (((symbol-function 'tether-context)
+               (lambda (&rest _) (error "Database closed"))))
+      (should (equal (tether--menu-description) "Tether")))))
 
 (provide 'tether-nav-test)
 ;;; tether-nav-test.el ends here

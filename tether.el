@@ -247,7 +247,9 @@ modes, so bind `tether-prefix-map' where you like.")
 
 (defun tether--menu-description ()
   "Return the heading of the `tether' menu."
-  (if-let* ((ctx (condition-case nil (tether-context) (user-error nil))))
+  ;; The cached context only, but its lookup queries forge's database
+  ;; and git, which may fail: the menu opens anyway.
+  (if-let* ((ctx (condition-case nil (tether-context) (error nil))))
       (let ((pullreq (tether-context-pullreq ctx)))
         (format "Tether  %s %s  (head %s)"
                 (tether--label (tether-context-repo ctx) (oref pullreq number))

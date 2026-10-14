@@ -111,9 +111,7 @@ GitLab gives the commit a discussion's position is on."
              (line (and (eq (tether-thread-side thread) 'right)
                         (tether--commit-p sha)
                         (tether-diff-drift-to
-                         (tether-diff-parse-drift
-                          (tether--git-diff "-U0" sha head "--"
-                                            (tether-thread-path thread)))
+                         (tether--drift sha head (tether-thread-path thread))
                          (tether-thread-line thread)))))
         (setf (tether-thread-line thread) line
               (tether-thread-outdated thread) (null line))))
@@ -123,23 +121,25 @@ GitLab gives the commit a discussion's position is on."
   "Fetch the review threads of CTX's pull request in the background.
 When they arrive, if CTX is still current, run `tether-threads-functions'."
   ;; A single-commit context is never current: its pull request's
-  ;; context holds the threads.
-  (when (tether-context-commit ctx)
-    (setq ctx (or (gethash (tether--context-key ctx) tether--contexts) ctx)))
-  (setf (tether-context-threads-state ctx) 'loading)
-  (tether--fetch-threads
-   (tether-context-repo ctx) ctx
-   (lambda (result)
-     (when (tether-context-current-p ctx)
-       (if (plist-get result :ok)
-           (setf (tether-context-threads ctx)
-                 (mapcar (lambda (thread) (tether--place-thread ctx thread))
-                         (plist-get result :threads))
-                 (tether-context-threads-state ctx) 'done)
-         (setf (tether-context-threads-state ctx) 'error)
-         (message "Tether: cannot fetch the review threads: %s"
-                  (plist-get result :message)))
-       (run-hook-with-args 'tether-threads-functions ctx)))))
+  ;; context holds the threads.  When that one is gone, its next
+  ;; resolution fetches them.
+  (when-let* ((ctx (if (tether-context-commit ctx)
+                       (gethash (tether--context-key ctx) tether--contexts)
+                     ctx)))
+    (setf (tether-context-threads-state ctx) 'loading)
+    (tether--fetch-threads
+     (tether-context-repo ctx) ctx
+     (lambda (result)
+       (when (tether-context-current-p ctx)
+         (if (plist-get result :ok)
+             (setf (tether-context-threads ctx)
+                   (mapcar (lambda (thread) (tether--place-thread ctx thread))
+                           (plist-get result :threads))
+                   (tether-context-threads-state ctx) 'done)
+           (setf (tether-context-threads-state ctx) 'error)
+           (message "Tether: cannot fetch the review threads: %s"
+                    (plist-get result :message)))
+         (run-hook-with-args 'tether-threads-functions ctx))))))
 
 (defun tether--open-threads (ctx)
   "Return the threads of CTX that are neither resolved nor outdated."
@@ -169,11 +169,15 @@ Resolved threads count only when `tether-show-resolved' is non-nil."
 (defvar-local tether--thread-overlays nil
   "Overlays showing the review threads of the current buffer.")
 
+(defun tether--comment-lines (comment)
+  "Return the lines of COMMENT's body, trimmed, whatever its line ends."
+  (split-string (string-trim (or (plist-get comment :body) "")) "\r?\n"))
+
 (defun tether--thread-first-line (thread)
   "Return the author and first line of THREAD's first comment."
   (let ((first (car (tether-thread-comments thread))))
     (format "%s: %s" (plist-get first :author)
-            (car (split-string (or (plist-get first :body) "") "\r?\n")))))
+            (car (tether--comment-lines first)))))
 
 (defun tether--thread-summary (thread)
   "Return the text shown at the end of THREAD's line."
@@ -188,6 +192,28 @@ Resolved threads count only when `tether-show-resolved' is non-nil."
   (mapc #'delete-overlay tether--thread-overlays)
   (setq tether--thread-overlays nil))
 
+(defun tether--make-thread-overlay (thread)
+  "Return an overlay showing THREAD on the current line.
+A fringe mark, the first comment on hover and, when
+`tether-thread-summary' is non-nil, the start of THREAD at the end of
+the line."
+  (let ((overlay (make-overlay (line-beginning-position) (line-end-position))))
+    (overlay-put overlay 'tether-thread thread)
+    (overlay-put overlay 'priority 10)
+    (overlay-put overlay 'help-echo (tether--thread-first-line thread))
+    (when (display-graphic-p)
+      (overlay-put overlay 'before-string
+                   (propertize " " 'display
+                               `(left-fringe tether-thread
+                                             ,(if (tether-thread-resolved thread)
+                                                  'tether-thread-resolved
+                                                'tether-thread)))))
+    (when tether-thread-summary
+      (overlay-put overlay 'after-string
+                   (propertize (tether--thread-summary thread)
+                               'face 'tether-thread-summary)))
+    overlay))
+
 (defun tether--update-thread-overlays (ctx path)
   "Show CTX's review threads on PATH in the current buffer."
   (tether--clear-thread-overlays)
@@ -198,58 +224,9 @@ Resolved threads count only when `tether-show-resolved' is non-nil."
           (widen)
           (goto-char (point-min))
           (forward-line (1- line))
-          (let ((overlay (make-overlay (point) (line-end-position)))
-                (face (if (tether-thread-resolved thread)
-                          'tether-thread-resolved 'tether-thread)))
-            (overlay-put overlay 'tether-thread thread)
-            (overlay-put overlay 'priority 10)
-            (overlay-put overlay 'help-echo (tether--thread-first-line thread))
-            (when (display-graphic-p)
-              (overlay-put overlay 'before-string
-                           (propertize " " 'display
-                                       `(left-fringe tether-thread ,face))))
-            (when tether-thread-summary
-              (overlay-put overlay 'after-string
-                           (propertize (tether--thread-summary thread)
-                                       'face 'tether-thread-summary)))
-            (push overlay tether--thread-overlays)))))))
+          (push (tether--make-thread-overlay thread) tether--thread-overlays))))))
 
 ;;;; In magit commit buffers
-
-(defun tether--diff-line-position (path side line)
-  "Return the start of LINE of PATH in the current diff buffer, or nil.
-LINE is on the new side of the diff when SIDE is `right', on the old
-side when it is `left'."
-  (when-let* ((file (seq-find (lambda (section)
-                                (and (magit-section-match 'file section)
-                                     (equal (oref section value) path)))
-                              (oref magit-root-section children))))
-    (seq-some
-     (lambda (hunk)
-       (pcase-let ((`(,start ,len) (if (eq side 'left)
-                                       (oref hunk from-range)
-                                     (oref hunk to-range))))
-         (when (and (<= start line) (< line (+ start (max len 1))))
-           (save-excursion
-             (goto-char (oref hunk content))
-             (let ((old (car (oref hunk from-range)))
-                   (new (car (oref hunk to-range)))
-                   found)
-               (while (and (not found) (< (point) (oref hunk end)))
-                 (let ((kind (pcase (char-after)
-                               (?+ :added) (?- :removed) (?\\ :marker)
-                               (_ :context))))
-                   (when (and (not (eq kind :marker))
-                              (if (eq side 'left)
-                                  (and (not (eq kind :added)) (= old line))
-                                (and (not (eq kind :removed)) (= new line))))
-                     (setq found (point)))
-                   (unless (memq kind '(:added :marker)) (cl-incf old))
-                   (unless (memq kind '(:removed :marker)) (cl-incf new)))
-                 (forward-line 1))
-               found)))))
-     (seq-filter (lambda (section) (magit-section-match 'hunk section))
-                 (oref file children)))))
 
 (defun tether--head-to-commit-drift (ctx head path)
   "Return the drift of PATH from the PR HEAD to CTX's commit, cached."
@@ -258,9 +235,7 @@ side when it is `left'."
     (pcase (gethash key maps 'none)
       ('none (puthash key
                       (let ((default-directory (tether-context-toplevel ctx)))
-                        (tether-diff-parse-drift
-                         (tether--git-diff "-U0" head (tether-context-commit ctx)
-                                           "--" path)))
+                        (tether--drift head (tether-context-commit ctx) path))
                       maps))
       (drift drift))))
 
@@ -287,8 +262,7 @@ it did not change since."
   (let ((bar (propertize "  ▎ " 'face 'tether-thread)))
     (mapconcat
      (lambda (comment)
-       (let ((lines (split-string (string-trim (or (plist-get comment :body) ""))
-                                  "\r?\n")))
+       (let ((lines (tether--comment-lines comment)))
          (concat "\n" bar
                  (propertize (or (plist-get comment :author) "?") 'face 'bold)
                  ": " (car lines)
@@ -306,23 +280,10 @@ variables when it shows the buffer again."
 
 (defun tether--draw-diff-thread (thread)
   "Draw THREAD on the diff line at point."
-  (let ((overlay (make-overlay (line-beginning-position) (line-end-position)))
-        (resolved (tether-thread-resolved thread)))
+  (let ((overlay (tether--make-thread-overlay thread)))
     (overlay-put overlay 'tether-diff-thread t)
-    (overlay-put overlay 'tether-thread thread)
-    (overlay-put overlay 'priority 10)
-    (overlay-put overlay 'help-echo (tether--thread-first-line thread))
-    (when (display-graphic-p)
-      (overlay-put overlay 'before-string
-                   (propertize " " 'display
-                               `(left-fringe tether-thread
-                                             ,(if resolved 'tether-thread-resolved
-                                                'tether-thread)))))
-    (overlay-put overlay 'after-string
-                 (if (and tether-diff-thread-comments (not resolved))
-                     (tether--thread-comments-text thread)
-                   (propertize (tether--thread-summary thread)
-                               'face 'tether-thread-summary)))))
+    (when (and tether-diff-thread-comments (not (tether-thread-resolved thread)))
+      (overlay-put overlay 'after-string (tether--thread-comments-text thread)))))
 
 (defun tether--revision-context (sha)
   "Return the cached context of a pull request with commit SHA, or nil."
@@ -336,22 +297,35 @@ variables when it shows the buffer again."
                tether--contexts)
       nil)))
 
+(defvar tether-mode)
+(defvar global-tether-mode)
+(declare-function tether-mode "tether")
+(declare-function tether--turn-on "tether")
+
 (defun tether--update-revision-threads ()
   "Show the review threads in a magit commit buffer.
 Only for a commit of a pull request tether already resolved; comments
-from the buffer then target that commit, as from `tether-review-commit'.
+from the buffer then target that commit, as from `tether-review-commit',
+and `tether-mode' is on there as in files.  Not for a merge commit:
+magit shows it as a combined diff, whose lines tether cannot place.
 Never makes a request."
   (when (derived-mode-p 'magit-revision-mode)
     (with-demoted-errors "Tether: %S"
       (tether--clear-diff-threads)
-      (let* ((sha (and magit-buffer-revision
-                       (magit-rev-parse (concat magit-buffer-revision "^{commit}"))))
-             (pr-ctx (and sha (tether--revision-context sha))))
+      (let* ((sha magit-buffer-revision-oid)
+             (pr-ctx (and-let* ((sha)
+                                (ctx (tether--revision-context sha))
+                                ((not (magit-rev-verify (concat sha "^2")))))
+                       ctx)))
         (if (not pr-ctx)
             (progn (kill-local-variable 'tether--buffer-pullreq)
-                   (kill-local-variable 'tether--buffer-commit))
+                   (kill-local-variable 'tether--buffer-commit)
+                   (when (bound-and-true-p tether-mode)
+                     (tether-mode -1)))
           (setq-local tether--buffer-pullreq (oref (tether-context-pullreq pr-ctx) id))
           (setq-local tether--buffer-commit sha)
+          (when (bound-and-true-p global-tether-mode)
+            (tether--turn-on))
           (when (eq (tether-context-threads-state pr-ctx) 'done)
             (let ((ctx (tether--commit-context pr-ctx sha))
                   (head (tether-context-head-sha pr-ctx)))
@@ -411,9 +385,9 @@ Or the previous one unless FORWARD.  Shows its hunk if collapsed."
 In a magit commit buffer, only to the threads shown there."
   (if (derived-mode-p 'magit-revision-mode)
       (tether--go-to-diff-thread forward)
-    (tether--go-to-thread-1 forward)))
+    (tether--go-to-pr-thread forward)))
 
-(defun tether--go-to-thread-1 (forward)
+(defun tether--go-to-pr-thread (forward)
   "Go to the next thread of the PR, or the previous one unless FORWARD."
   (let* ((ctx (tether-context t))
          (threads (or (tether--placed-threads ctx)
@@ -492,8 +466,7 @@ fetches the threads again.
     (insert (propertize (format "    %s, %s\n" (plist-get comment :author)
                                 (or (plist-get comment :created) ""))
                         'font-lock-face 'bold))
-    (dolist (line (split-string (string-trim (or (plist-get comment :body) ""))
-                                "\n"))
+    (dolist (line (tether--comment-lines comment))
       (insert "      " line "\n")))
   (when-let* ((hunk (and (tether-thread-outdated thread)
                          (tether-thread-diff-hunk thread))))
@@ -739,7 +712,7 @@ current line."
 (defun tether--comment-start (comment)
   "Return the first line of COMMENT, shortened."
   (truncate-string-to-width
-   (car (split-string (or (plist-get comment :body) "") "\n")) 60 nil nil "…"))
+   (car (tether--comment-lines comment)) 60 nil nil "…"))
 
 (defun tether--comment-choice (comment)
   "Return how to offer COMMENT in a choice."

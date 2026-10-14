@@ -428,8 +428,11 @@ in the next comment."
   (delete-dups
    (delq nil (cons (oref (tether-context-pullreq ctx) author)
                    ;; A database query, which may fail: then only the author.
-                   (with-demoted-errors "Tether: no assignees: %S"
-                     (mapcar #'cadr (oref (tether-context-repo ctx) assignees)))))))
+                   ;; Not `with-demoted-errors': under `debug-on-error' it
+                   ;; lets the error through.
+                   (condition-case err
+                       (mapcar #'cadr (oref (tether-context-repo ctx) assignees))
+                     (error (message "Tether: no assignees: %S" err) nil))))))
 
 (defun tether-comment-mention (login)
   "Insert a mention of LOGIN, read with completion."
