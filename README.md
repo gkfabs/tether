@@ -10,8 +10,8 @@ request and the API token all come from Forge, so there is nothing extra to
 configure.
 
 Commenting, suggestions, navigation, review threads (reply, resolve,
-delete), draft reviews and single-commit review work on GitHub and
-GitLab. GitHub Enterprise Server should work too, but is only covered by
+delete), draft reviews, single-commit review and the CI status of pull
+requests work on GitHub and GitLab. GitHub Enterprise Server should work too, but is only covered by
 unit tests.
 
 ## Requirements
@@ -55,6 +55,7 @@ The `tether` menu (`C-c t @` with the binding above, or `@` in
 | `d` | `tether-diff` | the PR diff, at the hunk of the line |
 | `t` | `tether-topic` | forge's buffer of the pull request |
 | `b` | `tether-browse` | the PR diff in the browser, at the line |
+| `P` | `tether-browse-ci` | the CI of the PR at point (in a list of PRs) or of the buffer, in the browser |
 | `m` | `tether-status` | magit-status |
 | `v` | `tether-review-pullreq` | pick any pull request and open its diff |
 | `C` | `tether-review-commit` | review the commit at point alone |
@@ -99,6 +100,16 @@ resolved: the threads written on that commit, and those whose line has not
 changed since. Comments from there go on that commit, as with
 `tether-review-commit`. `tether-diff-thread-comments` set to nil shows
 only the start of each thread.
+
+Pressing `g` in magit-status also fetches the CI status of the open pull
+requests (GitLab's head pipeline, GitHub's checks), in one request per
+repository, and shows it at the end of each line of forge's pull request
+list: ✓ passed, ✗ failed, ● running, ⊘ canceled or skipped. The mode line
+shows the one of the buffer's pull request (`!540·3✓`); `tether-refresh`
+fetches it too. Nothing else does: a magit-status refreshing by itself,
+after a commit for example, shows what was fetched last.
+`tether-ci-status` set to nil turns it off. On a branch without a pull
+request, this needs `global-tether-mode`.
 
 A draft review lives on the forge: GitHub's pending review, GitLab's draft
 notes, so one started in the web interface works too. The mode line shows

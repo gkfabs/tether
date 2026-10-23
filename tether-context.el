@@ -94,6 +94,9 @@ their PR whatever the branch.")
 (defvar tether--offered-branches nil
   "Branches for which recording the pull request was already offered.")
 
+(defvar tether-refresh-functions nil
+  "Functions called with the context `tether-refresh' just resolved.")
+
 (defvar tether--refreshing nil
   "Non-nil while `tether-refresh' runs: resolve without the cache.")
 
@@ -456,6 +459,7 @@ With prefix argument PICK, choose the pull request."
   (interactive "P")
   (let* ((tether--refreshing t)
          (ctx (tether-context t pick)))
+    (run-hook-with-args 'tether-refresh-functions ctx)
     (tether--wait-for-threads ctx)
     (message "Tether: %s" (tether--describe ctx))))
 

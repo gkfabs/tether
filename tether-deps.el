@@ -62,6 +62,8 @@
     magit-git-string
     magit-merge-base
     magit-read-branch-or-commit
+    magit-refresh
+    magit-refresh-all
     magit-rev-ancestor-p
     magit-rev-parse
     magit-rev-verify

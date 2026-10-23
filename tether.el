@@ -51,6 +51,7 @@
 (require 'tether-nav)
 (require 'tether-threads)
 (require 'tether-review)
+(require 'tether-ci)
 
 (defgroup tether nil
   "Review pull requests and merge requests from file buffers."
@@ -153,7 +154,8 @@ A warning sign means the local branch is not the PR head."
                     (and ctx (tether--review-active-p ctx)
                          (format "✎%d" (or (plist-get (tether-context-review ctx)
                                                       :drafts)
-                                           0))))))))
+                                           0)))
+                    (tether-ci-mark (oref (car found) id) number))))))
 
 (defun tether--clear-fringe ()
   "Remove the commentable-line overlays of the current buffer."
@@ -233,6 +235,7 @@ For example: (keymap-set tether-mode-map \"C-c t\" tether-prefix-map)."
   "d" #'tether-diff
   "t" #'tether-topic
   "b" #'tether-browse
+  "P" #'tether-browse-ci
   "m" #'tether-status
   "v" #'tether-review-pullreq
   "u" #'tether-review-url
@@ -270,6 +273,7 @@ modes, so bind `tether-prefix-map' where you like.")
     ("d" "PR diff at hunk" tether-diff)
     ("t" "forge topic" tether-topic)
     ("b" "browser at line" tether-browse)
+    ("P" "CI in the browser" tether-browse-ci)
     ("m" "magit-status" tether-status)]
    ["Threads"
     ("l" "list" tether-threads)
@@ -370,6 +374,7 @@ are in the `tether' menu and `tether-prefix-map'.
         (add-hook 'after-save-hook #'tether--refresh-buffer nil t)
         (add-hook 'magit-post-refresh-hook #'tether--magit-refreshed)
         (add-hook 'magit-refresh-buffer-hook #'tether--update-revision-threads)
+        (add-hook 'magit-refresh-buffer-hook #'tether-ci--magit-refreshed)
         (tether--refresh-buffer))
     (remove-hook 'after-save-hook #'tether--refresh-buffer t)
     (tether--clear-fringe)
@@ -389,13 +394,27 @@ no request when a file is opened."
 
 ;;;###autoload
 (define-globalized-minor-mode global-tether-mode tether-mode tether--turn-on
-  :group 'tether)
+  :group 'tether
+  ;; The pull request lists of magit-status show the CI status, even on
+  ;; a branch without a pull request, where `tether-mode' is off.
+  (when global-tether-mode
+    (add-hook 'magit-refresh-buffer-hook #'tether-ci--magit-refreshed)))
+
+(defun tether--ci-arrived (_repo)
+  "Show the CI status that just arrived in the mode lines."
+  (dolist (buffer (buffer-list))
+    (with-current-buffer buffer
+      (when tether-mode
+        (with-demoted-errors "Tether: %S"
+          (tether--update-lighter (tether--buffer-pr)))
+        (force-mode-line-update)))))
 
 ;; Whatever buffer a pull request is resolved from (magit-status, a
 ;; diff, a file), fetch its threads and update the buffers showing it.
 (add-hook 'tether-context-functions #'tether--context-resolved)
 (add-hook 'tether-threads-functions #'tether--refresh-worktree)
 (add-hook 'tether-review-functions #'tether--refresh-worktree)
+(add-hook 'tether-ci-functions #'tether--ci-arrived)
 
 (provide 'tether)
 ;;; tether.el ends here

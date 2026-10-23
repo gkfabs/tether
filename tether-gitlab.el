@@ -38,6 +38,54 @@ retry in a moment" number))
             :base-tip nil
             :base-ref .target_branch))))
 
+;;;; CI
+
+(defconst tether-gitlab--ci-query
+  '(query (project [(fullPath $path ID!)]
+                   (mergeRequests [(:edges t) (state opened)]
+                                  iid
+                                  (headPipeline status sha path))))
+  "The head pipeline of each open merge request.")
+
+(defun tether-gitlab--ci-state (status)
+  "Return tether's CI state for GitLab's pipeline STATUS, or nil."
+  (pcase status
+    ("SUCCESS" 'success)
+    ("FAILED" 'failure)
+    ((or "CANCELED" "CANCELING" "SKIPPED" "MANUAL") 'canceled)
+    ((or "CREATED" "WAITING_FOR_RESOURCE" "PREPARING" "PENDING" "RUNNING"
+         "SCHEDULED")
+     'running)))
+
+(cl-defmethod tether--ci-url ((repo forge-gitlab-repository) number)
+  "Return the pipelines tab of merge request NUMBER of GitLab REPO.
+For a merge request whose head pipeline is unknown."
+  (format "%s/-/merge_requests/%d/pipelines" (tether--web-repo repo) number))
+
+(cl-defmethod tether--fetch-ci ((repo forge-gitlab-repository) done)
+  "Fetch the head pipelines of the open merge requests of REPO; call DONE."
+  (tether--query-async
+   repo tether-gitlab--ci-query
+   `((path . ,(format "%s/%s" (oref repo owner) (oref repo name))))
+   (lambda (result)
+     (funcall
+      done
+      (if (not (plist-get result :ok))
+          result
+        (list :ok t
+              :statuses
+              (delq nil
+                    (mapcar
+                     (lambda (mr)
+                       (let-alist mr
+                         (when-let* ((state (tether-gitlab--ci-state .headPipeline.status)))
+                           (list :number (string-to-number .iid) :state state
+                                 :sha .headPipeline.sha
+                                 :url (format "https://%s%s" (oref repo githost)
+                                              .headPipeline.path)))))
+                     (let-alist (plist-get result :value)
+                       .project.mergeRequests)))))))))
+
 ;;;; Comments
 
 (defun tether-gitlab--line-code (path line)

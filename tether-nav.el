@@ -46,7 +46,7 @@
             (oref magit-root-section children)))
 
 (defun tether--hunk-lines (hunk function)
-  "Call FUNCTION on each line of HUNK until it returns non-nil.
+  "Call FUNCTION on each line of HUNK until its value is non-nil.
 Return that value.  FUNCTION is called with point at the start of the
 line, with its kind (:context, :added or :removed) and its line
 numbers on the old and new sides, nil on the side it is absent from.
@@ -354,11 +354,6 @@ edits; else, or with HEAD non-nil, the PR head's version."
   "Return the web page of CTX's PR diff on REPO at LINE of PATH.
 SIDE is `right' or `left'.  Without LINE, the page of the file;
 without PATH, the PR's diff.")
-
-(defun tether--web-repo (repo)
-  "Return the web address of REPO."
-  (format "https://%s/%s/%s" (oref repo githost) (oref repo owner)
-          (oref repo name)))
 
 (cl-defmethod tether--browse-url ((repo forge-github-repository) ctx path line side)
   "Return the files page of the PR on GitHub REPO, at LINE of PATH.

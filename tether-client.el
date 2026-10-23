@@ -272,6 +272,21 @@ empty, is the summary.  Return the message to show.")
   "Fetch the review threads of CTX's pull request on REPO, asynchronously.
 Call DONE with (:ok t :threads THREADS) or (:ok nil :message MESSAGE).")
 
+(cl-defgeneric tether--fetch-ci (repo done)
+  "Fetch the CI status of the open pull requests of REPO, asynchronously.
+Call DONE with (:ok t :statuses STATUSES) or (:ok nil :message MESSAGE).
+Each status is a plist: :number, :state (`success', `failure',
+`running' or `canceled'), :sha (the commit it is for) and :url (the
+page showing it).  Pull requests without CI are left out.")
+
+(cl-defgeneric tether--ci-url (repo number)
+  "Return the page of the CI of pull request NUMBER of REPO.")
+
+(defun tether--web-repo (repo)
+  "Return the web address of REPO."
+  (format "https://%s/%s/%s" (oref repo githost) (oref repo owner)
+          (oref repo name)))
+
 ;;;; Per-forge operations
 
 (cl-defgeneric tether--fetch-diff-refs (repo pullreq)

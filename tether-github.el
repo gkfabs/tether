@@ -199,6 +199,52 @@ so the comment goes into that review instead."
                                                  .repository.pullRequest.reviewThreads)))
                 result)))))
 
+(defconst tether-github--ci-query
+  '(query (repository [(owner $owner String!) (name $name String!)]
+                      (pullRequests [(:edges t) (states OPEN)]
+                                    number
+                                    (commits [(last 1)]
+                                             (nodes (commit oid (statusCheckRollup state)))))))
+  "The status of the checks on the head of each open pull request.")
+
+(defun tether-github--ci-state (state)
+  "Return tether's CI state for GitHub's StatusState STATE, or nil."
+  (pcase state
+    ("SUCCESS" 'success)
+    ((or "FAILURE" "ERROR") 'failure)
+    ((or "PENDING" "EXPECTED") 'running)))
+
+(cl-defmethod tether--ci-url ((repo forge-github-repository) number)
+  "Return the CI tab of pull request NUMBER of GitHub REPO."
+  (format "%s/pull/%d/checks" (tether--web-repo repo) number))
+
+(cl-defmethod tether--fetch-ci ((repo forge-github-repository) done)
+  "Fetch the CI status of the open pull requests of GitHub REPO; call DONE."
+  (tether--query-async
+   repo tether-github--ci-query
+   `((owner . ,(oref repo owner))
+     (name . ,(oref repo name)))
+   (lambda (result)
+     (funcall
+      done
+      (if (not (plist-get result :ok))
+          result
+        (list :ok t
+              :statuses
+              (delq nil
+                    (mapcar
+                     (lambda (pullreq)
+                       (let-alist pullreq
+                         (let ((commit (alist-get 'commit (car .commits.nodes))))
+                           (when-let* ((state (tether-github--ci-state
+                                               (alist-get 'state (alist-get 'statusCheckRollup
+                                                                            commit)))))
+                             (list :number .number :state state
+                                   :sha (alist-get 'oid commit)
+                                   :url (tether--ci-url repo .number))))))
+                     (let-alist (plist-get result :value)
+                       .repository.pullRequests)))))))))
+
 (defconst tether-github--reply-mutation
   '(mutation (addPullRequestReviewThreadReply
               [(input $input AddPullRequestReviewThreadReplyInput!)]
