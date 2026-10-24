@@ -155,6 +155,13 @@ make deps all TETHER_DEPS=min
 `make surface` fails when the code uses a magit/forge/ghub symbol that is
 internal or not in the allowlist in `tether-deps.el`.
 
+## AI assistance
+
+tether is written with the help of an AI assistant (Claude), and each file
+says so in its header (`Assisted-by:`). The author designs it, reviews the
+changes and uses it on real pull requests; the tests and CI above check
+every change.
+
 ## License
 
 GPL-3.0-or-later.
