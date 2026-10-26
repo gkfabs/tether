@@ -214,6 +214,10 @@ so the comment goes into that review instead."
     ((or "FAILURE" "ERROR") 'failure)
     ((or "PENDING" "EXPECTED") 'running)))
 
+(cl-defmethod tether--comment-outside-hunks-p ((_repo forge-github-repository))
+  "GitHub takes comments on the lines of the diff's hunks only."
+  nil)
+
 (cl-defmethod tether--ci-url ((repo forge-github-repository) number)
   "Return the CI tab of pull request NUMBER of GitHub REPO."
   (format "%s/pull/%d/checks" (tether--web-repo repo) number))

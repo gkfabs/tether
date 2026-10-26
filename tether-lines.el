@@ -183,11 +183,16 @@ Return nil when that line changed locally since CTX's head."
 
 ;;;; Lookup
 
+(defun tether--anywhere-p (ctx)
+  "Return non-nil if CTX's forge takes comments outside the diff's hunks."
+  (tether--comment-outside-hunks-p (tether-context-repo ctx)))
+
 (defun tether-line-at (ctx path line)
   "Return the `tether-line' of LINE of the current buffer visiting PATH.
-Return nil when the line is not in CTX's diff or changed locally."
+Return nil when the line cannot take a comment in CTX's pull request,
+or changed locally."
   (when-let* ((head (tether-head-line ctx path line)))
-    (tether-file-map-line (tether-file-map ctx path) head)))
+    (tether-file-map-line (tether-file-map ctx path) head (tether--anywhere-p ctx))))
 
 (defun tether-region-at (ctx path beg end)
   "Return (START . END) `tether-line's for lines BEG to END of the buffer.
@@ -196,7 +201,8 @@ when the lines cannot take one comment on CTX's pull request."
   (let* ((drifts (tether--drifts ctx path))
          (head-beg (tether--to-head drifts beg))
          (head-end (tether--to-head drifts end))
-         (map (tether-file-map ctx path)))
+         (map (tether-file-map ctx path))
+         (anywhere (tether--anywhere-p ctx)))
     (cond
      ((null head-beg)
       (user-error "Tether: %s line %d changed locally since the PR head"
@@ -208,9 +214,10 @@ when the lines cannot take one comment on CTX's pull request."
       (user-error "Tether: %s lines %d-%d changed locally since the PR head"
                   path beg end))
      (t
-      (when-let* ((problem (tether-file-map-region-problem map head-beg head-end)))
+      (when-let* ((problem (tether-file-map-region-problem map head-beg head-end
+                                                           anywhere)))
         (user-error "Tether: %s: %s" path problem))
-      (tether-file-map-region map head-beg head-end)))))
+      (tether-file-map-region map head-beg head-end anywhere)))))
 
 (defun tether-commentable-lines (ctx path)
   "Return the lines of the current buffer that can take a comment.

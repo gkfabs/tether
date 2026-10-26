@@ -81,6 +81,9 @@ was not sent. When posting fails, the buffer stays open and says why.
 A line can take a comment when it is in the pull request diff (a changed
 line, or one of the three lines around it), and has not changed locally
 since the PR head: tether maps lines through uncommitted and unsaved edits.
+On GitLab, any line of a file the merge request changes can take one, and
+a comment may cover lines of several hunks, as in GitLab's web interface;
+GitHub only takes lines of one hunk.
 In the PR diff, removed lines can be commented too. With a prefix argument,
 commands let you pick the pull request.
 

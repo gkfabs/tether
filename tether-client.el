@@ -310,6 +310,15 @@ The value is a plist:
 (cl-defgeneric tether--pullreq-ref (repo number)
   "Return the ref under which REPO's server publishes PR NUMBER's head.")
 
+(cl-defgeneric tether--comment-outside-hunks-p (repo)
+  "Return non-nil if REPO's forge takes comments on any line of a changed file.
+Otherwise only on the lines of the hunks of the pull request diff, and
+a comment on several lines stays in one hunk.")
+
+(cl-defmethod tether--comment-outside-hunks-p (_repo)
+  "Return nil: only the lines of the hunks, by default."
+  nil)
+
 (cl-defgeneric tether--pr-prefix (repo)
   "Return the character that prefixes PR numbers on REPO's forge.")
 

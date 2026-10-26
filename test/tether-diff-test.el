@@ -170,5 +170,54 @@
                    '(1 2 nil 4 5 7 8 nil 9 10)))
     (should (= (tether-diff-drift-from nil 42) 42))))
 
+(defconst tether-diff-test--two-hunks
+  "diff --git a/f.txt b/f.txt
+index 1111111..2222222 100644
+--- a/f.txt
++++ b/f.txt
+@@ -1,4 +1,6 @@
+ a
++x
++y
+ b
+ c
+ d
+@@ -20,4 +22,3 @@
+ t
+-u
+ v
+ w
+"
+  "Two hunks: two lines added, then one removed.")
+
+(ert-deftest tether-diff-test-outside-hunks ()
+  "Outside the hunks, a line's base number follows from the hunks before it."
+  (let ((map (car (tether-diff-parse tether-diff-test--two-hunks))))
+    (should-not (tether-file-map-line map 10))
+    ;; Two lines added before: new 10 is old 8.
+    (let ((line (tether-file-map-line map 10 t)))
+      (should (equal (list (tether-line-kind line) (tether-line-old line)
+                           (tether-line-new line) (tether-line-hunk line)
+                           (tether-line-code line))
+                     '(:context 8 10 nil (8 . 10)))))
+    ;; Then one removed: new 30 is old 29.
+    (should (equal (tether-line-old (tether-file-map-line map 30 t)) 29))
+    ;; In a hunk, the line of the diff.
+    (should (eq (tether-line-kind (tether-file-map-line map 2 t)) :added))
+    (should-not (tether-file-map-unchanged-line map 23))
+    (should (string-match-p "line 10 is not in the pull request diff"
+                            (tether-file-map-region-problem map 10 10)))
+    (should-not (tether-file-map-region-problem map 10 10 t))
+    (should (string-match-p "span two hunks" (tether-file-map-region-problem map 2 23)))
+    (should-not (tether-file-map-region-problem map 2 23 t))
+    (should (equal (mapcar #'tether-line-new (let ((r (tether-file-map-region map 2 23 t)))
+                                               (list (car r) (cdr r))))
+                   '(2 23)))))
+
+(ert-deftest tether-diff-test-outside-hunks-binary ()
+  "A binary file takes no comment on its lines, anywhere or not."
+  (let ((map (tether-diff-test--map "binary.diff")))
+    (should (equal (tether-file-map-region-problem map 1 1 t) "the file is binary"))))
+
 (provide 'tether-diff-test)
 ;;; tether-diff-test.el ends here

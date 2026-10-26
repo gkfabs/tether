@@ -28,9 +28,10 @@
            (expand-file-name "modified.diff" tether-post-test--fixtures))
           (buffer-string)))))
 
-(defun tether-post-test--target (beg end)
-  "Return a target on head lines BEG to END of mod.txt."
-  (let ((region (tether-file-map-region (tether-post-test--map) beg end)))
+(defun tether-post-test--target (beg end &optional anywhere)
+  "Return a target on head lines BEG to END of mod.txt.
+ANYWHERE allows lines outside the hunks, as on GitLab."
+  (let ((region (tether-file-map-region (tether-post-test--map) beg end anywhere)))
     (list :path "mod.txt" :old-path "mod.txt"
           :start (car region) :end (cdr region) :side 'right)))
 
@@ -78,6 +79,18 @@ GitLab's diff parser computes it."
     (should (equal (alist-get 'end range)
                    `((line_code . ,(concat tether-post-test--mod-sha1 "_4_4"))
                      (old_line . 4) (new_line . 4))))))
+
+(ert-deftest tether-post-test-gitlab-outside-hunks ()
+  "Lines between the hunks are unchanged: both numbers, and line codes."
+  (let* ((position (tether-gitlab--position
+                    (tether-post-test--ctx (tether-test-gitlab-repo))
+                    (tether-post-test--target 19 21 t)))
+         (range (alist-get 'line_range position)))
+    (should (equal (alist-get 'old_line position) 21))
+    (should (equal (alist-get 'new_line position) 21))
+    (should (equal (alist-get 'end range)
+                   `((line_code . ,(concat tether-post-test--mod-sha1 "_21_21"))
+                     (old_line . 21) (new_line . 21))))))
 
 (ert-deftest tether-post-test-gitlab-post ()
   (let ((repo (tether-test-gitlab-repo)))

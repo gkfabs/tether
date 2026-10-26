@@ -307,19 +307,28 @@ The reply is typed below it."
   (force-mode-line-update))
 
 (defun tether-comment--insert-hunk (ctx target)
-  "Insert the hunk of TARGET in CTX's diff, read-only, below the text."
+  "Insert the hunk of TARGET in CTX's diff, read-only, below the text.
+For lines outside the hunks, insert the lines themselves."
   (when-let* ((end (plist-get target :end))
-              (hunk (tether-hunk-text ctx (plist-get target :path)
-                                      (tether-line-hunk end))))
+              (path (plist-get target :path))
+              (text (if (tether-line-hunk end)
+                        (tether-hunk-text ctx path (tether-line-hunk end))
+                      (tether-head-lines ctx path
+                                         (tether-line-new (plist-get target :start))
+                                         (tether-line-new end)))))
     (save-excursion
       (goto-char (point-max))
       (let ((start (point)))
-        (insert "\n-- Not sent: the hunk, for reference --\n")
-        (dolist (line (split-string (string-trim-right hunk) "\n"))
+        (insert (if (tether-line-hunk end)
+                    "\n-- Not sent: the hunk, for reference --\n"
+                  "\n-- Not sent: the lines, outside the diff, for reference --\n"))
+        (dolist (line (split-string (string-trim-right text) "\n"))
           (insert (propertize line 'font-lock-face
-                              (pcase (string-to-char line)
-                                (?+ 'diff-added) (?- 'diff-removed)
-                                (?@ 'diff-hunk-header) (_ 'diff-context)))
+                              (if (not (tether-line-hunk end))
+                                  'diff-context
+                                (pcase (string-to-char line)
+                                  (?+ 'diff-added) (?- 'diff-removed)
+                                  (?@ 'diff-hunk-header) (_ 'diff-context))))
                   "\n"))
         ;; Not front-sticky: text can be typed above, not inside or
         ;; below.

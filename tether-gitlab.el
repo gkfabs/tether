@@ -38,6 +38,14 @@ retry in a moment" number))
             :base-tip nil
             :base-ref .target_branch))))
 
+;;;; Lines
+
+(cl-defmethod tether--comment-outside-hunks-p ((_repo forge-gitlab-repository))
+  "GitLab takes comments on any line of a changed file.
+An unchanged line outside the hunks has both its line numbers, as in
+the hunks."
+  t)
+
 ;;;; CI
 
 (defconst tether-gitlab--ci-query

@@ -27,8 +27,9 @@
   kind   ; :context, :added or :removed
   old    ; line number on the base side, nil when added
   new    ; line number on the head side, nil when removed
-  pos    ; 1-based position below the first @@ (GitHub's `position')
-  hunk   ; index of its hunk in the file's diff, from 0
+  pos    ; 1-based position below the first @@ (GitHub's `position'),
+         ; nil outside the hunks
+  hunk   ; index of its hunk in the file's diff, from 0; nil outside
   code)  ; (OLD . NEW) line counters at this line, for GitLab's
          ; line_code: an added line has the old number the next old
          ; line would get, a removed line the next new number, as in
@@ -216,30 +217,62 @@ old path for deleted files."
 
 ;;;; Lookup
 
-(defun tether-file-map-line (map line)
-  "Return the `tether-line' of head LINE in MAP, or nil."
-  (and map (gethash line (tether-file-map-by-new map))))
+(defun tether-file-map-unchanged-line (map line)
+  "Return a `tether-line' for head LINE of MAP outside its hunks, or nil.
+The line did not change: its base number follows from the hunks before
+it.  Nil when LINE is in a hunk."
+  (let ((old line))
+    (catch 'in-hunk
+      (dolist (hunk (tether-file-map-hunks map))
+        (let ((new-start (tether-hunk-new-start hunk))
+              (new-count (tether-hunk-new-count hunk)))
+          (when (and (> new-count 0) (<= new-start line)
+                     (< line (+ new-start new-count)))
+            (throw 'in-hunk nil))
+          ;; A hunk with no new line sits after its start line.
+          (let ((new-end (if (= new-count 0) (1+ new-start) (+ new-start new-count)))
+                (old-end (if (= (tether-hunk-old-count hunk) 0)
+                             (1+ (tether-hunk-old-start hunk))
+                           (+ (tether-hunk-old-start hunk)
+                              (tether-hunk-old-count hunk)))))
+            (when (>= line new-end)
+              (setq old (+ old-end (- line new-end)))))))
+      (make-tether-line :kind :context :old old :new line
+                        :code (cons old line)))))
 
-(defun tether-file-map-region-problem (map beg end)
+(defun tether-file-map-line (map line &optional anywhere)
+  "Return the `tether-line' of head LINE in MAP, or nil.
+With ANYWHERE, a line outside the hunks of MAP has one too."
+  (and map
+       (or (gethash line (tether-file-map-by-new map))
+           (and anywhere
+                (not (memq (tether-file-map-status map) '(:binary :lfs :deleted)))
+                (tether-file-map-unchanged-line map line)))))
+
+(defun tether-file-map-region-problem (map beg end &optional anywhere)
   "Return why head lines BEG to END of MAP cannot take one comment, or nil.
-A comment covers lines of one hunk."
-  (let ((first (tether-file-map-line map beg))
-        (last (tether-file-map-line map end)))
+A comment covers lines of one hunk; with ANYWHERE, any lines of the
+file, as GitLab allows."
+  (let ((first (tether-file-map-line map beg anywhere))
+        (last (tether-file-map-line map end anywhere)))
     (cond
      ((null map) "the file is not changed in the pull request")
      ((eq (tether-file-map-status map) :binary) "the file is binary")
      ((eq (tether-file-map-status map) :lfs) "the file is stored in Git LFS")
      ((null first) (format "line %d is not in the pull request diff" beg))
      ((null last) (format "line %d is not in the pull request diff" end))
-     ((/= (tether-line-hunk first) (tether-line-hunk last))
+     ((and (not anywhere)
+           (/= (tether-line-hunk first) (tether-line-hunk last)))
       (format "lines %d-%d span two hunks of the pull request diff" beg end)))))
 
-(defun tether-file-map-region (map beg end)
+(defun tether-file-map-region (map beg end &optional anywhere)
   "Return (START . END) `tether-line's for head lines BEG to END of MAP.
-Signal a `user-error' when they cannot take one comment."
-  (when-let* ((problem (tether-file-map-region-problem map beg end)))
+ANYWHERE is as for `tether-file-map-region-problem'.  Signal a
+`user-error' when the lines cannot take one comment."
+  (when-let* ((problem (tether-file-map-region-problem map beg end anywhere)))
     (user-error "Tether: %s" problem))
-  (cons (tether-file-map-line map beg) (tether-file-map-line map end)))
+  (cons (tether-file-map-line map beg anywhere)
+        (tether-file-map-line map end anywhere)))
 
 (defun tether-file-map-commentable (map)
   "Return the head lines of MAP that can take a comment, as (LINE . KIND)."

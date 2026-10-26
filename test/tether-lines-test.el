@@ -105,6 +105,26 @@ In the PR, a.el changes line 2 (\"two\" -> \"TWO\") and b.el is added."
         (should (string-match-p "c.el: the file is not changed in the pull request"
                                 (cadr err)))))))
 
+(ert-deftest tether-lines-test-outside-hunks ()
+  "GitLab takes any line of a changed file; GitHub only those of the hunks."
+  (tether-test-with-repos
+    (let* ((lines (mapconcat #'number-to-string (number-sequence 1 20) "\n"))
+           (base (tether-test-commit "long.el" (concat lines "\n")))
+           (head (tether-test-commit "long.el" (concat (string-replace "\n10\n" "\nTEN\n" lines)
+                                                       "\n")))
+           (ctx (tether-lines-test--context base head)))
+      (tether-lines-test-visiting "long.el"
+        (setf (tether-context-repo ctx) (tether-test-github-repo))
+        (should (string-match-p "line 1 is not in the pull request diff"
+                                (cadr (should-error (tether-region-at ctx "long.el" 1 2)
+                                                    :type 'user-error))))
+        (setf (tether-context-repo ctx) (tether-test-gitlab-repo))
+        (let ((region (tether-region-at ctx "long.el" 1 12)))
+          (should (equal (tether-line-old (car region)) 1))
+          (should (equal (tether-line-kind (cdr region)) :context))
+          (should (equal (tether-line-new (cdr region)) 12)))
+        (should (eq (tether-line-kind (tether-line-at ctx "long.el" 18)) :context))))))
+
 (ert-deftest tether-lines-test-blob-buffer ()
   "A tether blob buffer shows the head: lines map as they are."
   (tether-lines-test-at-head
