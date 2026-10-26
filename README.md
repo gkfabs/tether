@@ -94,8 +94,10 @@ fringe mark and the start of the discussion at the end of the line
 the open ones (`!540·3`). The thread list keeps outdated threads apart,
 with the hunk they were written on.
 
-Magit's commit buffer (`RET` on a commit in the log) shows the threads too,
-in full under their line, when the commit belongs to a pull request tether
+The PR diff (`tether-diff`, or a magit diff of the same range) shows the
+open threads in full under their line, removed lines included, and `n`/`p`
+go from thread to thread there. So does magit's commit buffer (`RET` on a
+commit in the log), when the commit belongs to a pull request tether
 resolved: the threads written on that commit, and those whose line has not
 changed since. Comments from there go on that commit, as with
 `tether-review-commit`. `tether-diff-thread-comments` set to nil shows

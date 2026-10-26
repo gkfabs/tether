@@ -35,6 +35,7 @@
 (require 'tether-lines)
 
 (declare-function tether-mode "tether")
+(declare-function tether--update-pr-diff-threads "tether-threads")
 
 ;;;; Diff buffers
 
@@ -176,6 +177,8 @@ on a line of the PR head (side `right') or only of its base (side
                       '("-M" "-U3" "--no-ext-diff"))
     (setq-local tether--buffer-pullreq id)
     (setq-local tether--buffer-commit (tether-context-commit ctx))
+    ;; Drawn when magit refreshed the buffer, before it was tied to CTX.
+    (tether--update-pr-diff-threads)
     (when path
       (unless (tether--diff-goto path line)
         (message "Tether: %s%s is not in the PR diff" path

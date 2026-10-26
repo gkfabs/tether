@@ -247,7 +247,7 @@ The PR's threads:
                  (tether-nav-test--thread "T4" "a.el" nil 'right :outdated t
                                           :original-sha pr1 :original-line 2)
                  (tether-nav-test--thread "T5" "a.el" 2 'right :resolved t)))
-     (let ((magit-refresh-buffer-hook (list #'tether--update-revision-threads)))
+     (let ((magit-refresh-buffer-hook (list #'tether--update-diff-threads)))
        ,@body)))
 
 (ert-deftest tether-nav-test-commit-threads ()
@@ -387,6 +387,44 @@ The PR's threads:
         (tether-fetch-threads commit-ctx))
       (should (eq (tether-context-threads-state commit-ctx) 'done)))))
 
+;;;; Threads in the PR diff
+
+(ert-deftest tether-nav-test-pr-diff-threads ()
+  "The PR diff shows the open threads on their lines; n and p stay in it."
+  (tether-nav-test-with-commit-threads (tether-test-gitlab-repo)
+    (tether--show-diff ctx)
+    ;; T4 is outdated: not on a line of the PR diff.
+    (should (equal (tether-nav-test--drawn-ids)
+                   '(("+TWO" "T1") ("-two" "T2") ("+new" "T3") ("+TWO" "T5"))))
+    (magit-refresh-buffer)
+    (should (= (length (tether-nav-test--drawn)) 4))
+    (let ((buffer (current-buffer)))
+      (goto-char (point-min))
+      (tether-next-thread)
+      (should (equal (tether-nav-test--line-text) "-two"))
+      (tether-next-thread)
+      (should (equal (tether-nav-test--line-text) "+TWO"))
+      (tether-next-thread)
+      (should (equal (tether-nav-test--line-text) "+new"))
+      (should (equal (tether-thread-id (tether--thread-at-point ctx)) "T3"))
+      (should-error (tether-next-thread) :type 'user-error)
+      (tether-previous-thread)
+      (should (equal (tether-nav-test--line-text) "+TWO"))
+      (should (eq (current-buffer) buffer)))))
+
+(ert-deftest tether-nav-test-pr-diff-threads-commit ()
+  "A single-commit review shows the threads on that commit."
+  (tether-nav-test-with-commit-threads (tether-test-gitlab-repo)
+    (tether--show-diff (tether--commit-context ctx pr1))
+    (should (equal (tether-nav-test--drawn-ids)
+                   '(("+TWO" "T1") ("-two" "T2") ("+TWO" "T4") ("+TWO" "T5"))))))
+
+(ert-deftest tether-nav-test-other-diff-no-threads ()
+  "A diff of another range shows no threads: their lines would be wrong."
+  (tether-nav-test-with-commit-threads (tether-test-gitlab-repo)
+    (magit-diff-range (format "%s..%s" main2 head))
+    (should-not (tether-nav-test--drawn))))
+
 ;;;; tether-mode
 
 (ert-deftest tether-nav-test-mode ()
@@ -399,7 +437,7 @@ The PR's threads:
         (tether--turn-on)
         (should tether-mode)
         (should (equal tether--lighter " #7"))
-        (should (memq #'tether--update-revision-threads
+        (should (memq #'tether--update-diff-threads
                       (default-value 'magit-refresh-buffer-hook)))
         (should-not tether--fringe-overlays)
         ;; Once resolved: one commit behind the PR head, and marks.

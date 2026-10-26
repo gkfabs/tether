@@ -373,7 +373,7 @@ are in the `tether' menu and `tether-prefix-map'.
       (progn
         (add-hook 'after-save-hook #'tether--refresh-buffer nil t)
         (add-hook 'magit-post-refresh-hook #'tether--magit-refreshed)
-        (add-hook 'magit-refresh-buffer-hook #'tether--update-revision-threads)
+        (add-hook 'magit-refresh-buffer-hook #'tether--update-diff-threads)
         (add-hook 'magit-refresh-buffer-hook #'tether-ci--magit-refreshed)
         (tether--refresh-buffer))
     (remove-hook 'after-save-hook #'tether--refresh-buffer t)
