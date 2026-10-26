@@ -6,7 +6,7 @@
 
 ;;; Commentary:
 
-;; Replying in, resolving and deleting comments of review threads, on
+;; Replying in, resolving, editing and deleting comments of review threads, on
 ;; both forges, with the API stubbed: the requests, and the commands
 ;; from a file line and the thread window.
 
@@ -37,6 +37,9 @@
     ('addPullRequestReviewThreadReply
      '(:value ((addPullRequestReviewThreadReply
                 (comment (url . "https://github.com/o/r/pull/7#r9"))))))
+    ('updatePullRequestReviewComment
+     '(:value ((updatePullRequestReviewComment
+                (pullRequestReviewComment (url . "https://github.com/o/r/pull/7#r2"))))))
     ('repository '(:value ((repository (pullRequest (reviewThreads))))))
     ('nil (if (equal (plist-get request :method) "POST")
               '(:value ((id . 42)))
@@ -62,6 +65,11 @@
                   'unresolveReviewThread))
       (should (equal (plist-get (car tether-test-requests) :variables)
                      '((input (threadId . "T1")))))
+      (should (equal (tether--update-comment repo ctx '(:id "C2") "Fixed, thanks")
+                     "https://github.com/o/r/pull/7#r2"))
+      (should (equal (plist-get (car tether-test-requests) :variables)
+                     '((input (pullRequestReviewCommentId . "C2")
+                              (body . "Fixed, thanks")))))
       (tether--delete-comment repo ctx '(:id "C2"))
       (should (eq (tether-test-graphql-operation (car tether-test-requests))
                   'deletePullRequestReviewComment))
@@ -97,6 +105,13 @@
       (tether--set-resolved repo ctx (tether-reply-test--thread) nil)
       (should (equal (plist-get (car tether-test-requests) :payload)
                      '((resolved))))
+      (should (equal (tether--update-comment repo ctx '(:id 42) "Fixed, thanks")
+                     "https://gitlab.com/g/sub/p/-/merge_requests/7#note_42"))
+      (should (equal (list (plist-get (car tether-test-requests) :method)
+                           (plist-get (car tether-test-requests) :resource)
+                           (plist-get (car tether-test-requests) :payload))
+                     '("PUT" "/projects/g%2Fsub%2Fp/merge_requests/7/notes/42"
+                       ((body . "Fixed, thanks")))))
       (tether--delete-comment repo ctx '(:id 42))
       (should (equal (list (plist-get (car tether-test-requests) :method)
                            (plist-get (car tether-test-requests) :resource))
@@ -152,6 +167,35 @@
                                 tether-test-requests)
                       :variables)
                      '((input (id . "C2"))))))))
+
+(ert-deftest tether-reply-test-edit-command ()
+  "Edit your comment in the editor: only yours, saved with C-c C-c."
+  (tether-reply-test-with
+    (cl-letf (((symbol-function 'tether--username) (lambda (_) "carol")))
+      (should-error (tether-edit-comment) :type 'user-error))
+    (cl-letf (((symbol-function 'tether--username) (lambda (_) "bob"))
+              ((symbol-function 'completing-read)
+               (lambda (&rest _) (error "Only one comment is bob's"))))
+      (tether-edit-comment))
+    (should (equal (buffer-name) "*tether-edit o/r#7 a.el:2 C2*"))
+    (should (equal (tether-comment--body) "Fixed: thanks"))
+    (should (string-search "Off by one?" (buffer-string)))
+    (should (string-match-p "Your comment on #7 a.el:2" (tether-comment--header)))
+    (tether-comment--set-body "Fixed, thanks!")
+    (let ((edit (current-buffer)))
+      (should (equal (plist-get (tether-comment-send) :message)
+                     "edited your comment on a.el:2"))
+      (should-not (buffer-live-p edit)))
+    (should (equal (plist-get
+                    (seq-find (lambda (r) (eq (tether-test-graphql-operation r)
+                                              'updatePullRequestReviewComment))
+                              tether-test-requests)
+                    :variables)
+                   '((input (pullRequestReviewCommentId . "C2")
+                            (body . "Fixed, thanks!")))))
+    ;; The threads are fetched again.
+    (should (memq 'repository
+                  (mapcar #'tether-test-graphql-operation tether-test-requests)))))
 
 (ert-deftest tether-reply-test-conversation-updates ()
   "New comments appear in the open thread; the text being typed stays."

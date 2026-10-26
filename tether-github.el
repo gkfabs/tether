@@ -291,6 +291,24 @@ WHAT names the action in the error saying GitHub refused it."
                          `((threadId . ,(tether-thread-id thread)))
                          (if resolved "resolve the thread" "reopen the thread")))
 
+(defconst tether-github--update-mutation
+  '(mutation (updatePullRequestReviewComment
+              [(input $input UpdatePullRequestReviewCommentInput!)]
+              (pullRequestReviewComment url)))
+  "Change the text of a review comment.")
+
+(cl-defmethod tether--update-comment ((repo forge-github-repository) _ctx comment body)
+  "Replace the text of COMMENT on GitHub REPO by BODY."
+  (let-alist (tether-github--mutate repo tether-github--update-mutation
+                                    `((pullRequestReviewCommentId . ,(plist-get comment :id))
+                                      (body . ,body))
+                                    "edit the comment")
+    .updatePullRequestReviewComment.pullRequestReviewComment.url))
+
+(cl-defmethod tether--username ((repo forge-github-repository))
+  "Return the login of the token's user on GitHub REPO's host."
+  (tether-github--viewer repo))
+
 (cl-defmethod tether--delete-comment ((repo forge-github-repository) _ctx comment)
   "Delete COMMENT on GitHub REPO."
   (tether-github--mutate repo tether-github--delete-mutation

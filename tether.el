@@ -222,6 +222,7 @@ For example: (keymap-set tether-mode-map \"C-c t\" tether-prefix-map)."
   "r" #'tether-reply
   "R" #'tether-resolve
   "k" #'tether-delete-comment
+  "e" #'tether-edit-comment
   "H" #'tether-toggle-resolved
   "w" #'tether-review-start
   "W" #'tether-review-submit
@@ -279,6 +280,7 @@ modes, so bind `tether-prefix-map' where you like.")
     ("l" "list" tether-threads)
     ("." "this line's thread, reply" tether-show-thread)
     ("R" "resolve / reopen" tether-resolve)
+    ("e" "edit a comment" tether-edit-comment)
     ("k" "delete a comment" tether-delete-comment)
     ("H" "show / hide resolved" tether-toggle-resolved)
     ("n" "next" tether-next-thread :transient t)

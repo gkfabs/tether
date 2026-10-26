@@ -759,6 +759,14 @@ current line."
   "Return how to offer COMMENT in a choice."
   (format "%s: %s" (plist-get comment :author) (tether--comment-start comment)))
 
+(defun tether--choose-comment (comments prompt)
+  "Return one of COMMENTS, read with PROMPT when there are several."
+  (if (cdr comments)
+      (let ((choices (mapcar (lambda (c) (cons (tether--comment-choice c) c))
+                             comments)))
+        (cdr (assoc (completing-read prompt choices nil t) choices)))
+    (car comments)))
+
 ;;;###autoload
 (defun tether-delete-comment ()
   "Delete a comment of the review thread at point, after confirmation.
@@ -767,13 +775,8 @@ your own."
   (interactive)
   (let* ((ctx (tether--threads-ctx))
          (thread (tether--thread-at-point-or-error ctx))
-         (comments (tether-thread-comments thread))
-         (comment (if (cdr comments)
-                      (let ((choices (mapcar (lambda (c) (cons (tether--comment-choice c) c))
-                                             comments)))
-                        (cdr (assoc (completing-read "Delete which comment? " choices nil t)
-                                    choices)))
-                    (car comments))))
+         (comment (tether--choose-comment (tether-thread-comments thread)
+                                          "Delete which comment? ")))
     (when (yes-or-no-p (format "Delete %s's comment “%s”? "
                                (plist-get comment :author)
                                (tether--comment-start comment)))

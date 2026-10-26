@@ -243,6 +243,14 @@ Return a plist with :url and :message, like `tether--post-comment'.")
   "Resolve THREAD of CTX's pull request on REPO, or reopen it.
 RESOLVED says which.  Signal a `user-error' when the forge refuses.")
 
+(cl-defgeneric tether--update-comment (repo ctx comment body)
+  "Replace the text of COMMENT of CTX's pull request on REPO by BODY.
+COMMENT is a plist of a `tether-thread'.  Return its web page, or nil.
+Signal a `user-error' when the forge refuses.")
+
+(cl-defgeneric tether--username (repo)
+  "Return the login of the token's user on REPO's forge.")
+
 (cl-defgeneric tether--delete-comment (repo ctx comment)
   "Delete COMMENT, a plist of a `tether-thread', of CTX's PR on REPO.
 Signal a `user-error' when the forge refuses.")
@@ -340,6 +348,8 @@ to tell the user.")
 A reply's target names its thread, a review's its verdict."
   (cond ((plist-get target :thread)
          (concat "reply on " (tether--thread-label (plist-get target :thread))))
+        ((plist-get target :edit)
+         (concat "edit on " (tether--thread-label (plist-get target :edit-thread))))
         ((plist-get target :review)
          (concat "review, as "
                  (tether--verdict-name (plist-get target :review))))

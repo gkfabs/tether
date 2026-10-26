@@ -265,6 +265,22 @@ RESOLVED says which."
       (tether-gitlab--refused result (if resolved "resolve the thread"
                                        "reopen the thread")))))
 
+(cl-defmethod tether--update-comment ((repo forge-gitlab-repository) ctx comment body)
+  "Replace the text of COMMENT of CTX's merge request on GitLab REPO by BODY."
+  (let* ((number (oref (tether-context-pullreq ctx) number))
+         (result (tether--call
+                  repo "PUT"
+                  (tether-gitlab--merge-request
+                   repo number (format "/notes/%s" (plist-get comment :id)))
+                  nil :payload `((body . ,body)))))
+    (unless (plist-get result :ok)
+      (tether-gitlab--refused result "edit the comment"))
+    (tether-gitlab--note-url repo number (plist-get comment :id))))
+
+(cl-defmethod tether--username ((repo forge-gitlab-repository))
+  "Return the username of the token's user on GitLab REPO's host."
+  (tether-gitlab--user repo))
+
 (cl-defmethod tether--delete-comment ((repo forge-gitlab-repository) ctx comment)
   "Delete COMMENT of CTX's merge request on GitLab REPO."
   (let ((result (tether--call

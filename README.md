@@ -64,6 +64,7 @@ The `tether` menu (`C-c t @` with the binding above, or `@` in
 | `.` | `tether-show-thread` | the thread of the current line: every comment, and a reply area below (`tether-reply` is the same) |
 | `H` | `tether-toggle-resolved` | show or hide resolved threads in files |
 | `R` | `tether-resolve` | resolve the thread at point, or reopen it |
+| `e` | `tether-edit-comment` | edit one of your comments in the thread of the line (`C-c C-e` in a thread window) |
 | `k` | `tether-delete-comment` | delete one of your comments, after confirmation |
 | `w` | `tether-review-start` | start a draft review: comments are drafts until submitted |
 | `W` | `tether-review-submit` | publish the drafts as a comment, an approval or a change request |

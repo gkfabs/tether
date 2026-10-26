@@ -163,7 +163,8 @@ The text may take a while to write; the PR head may have moved."
   "M-p" #'tether-comment-previous
   "M-n" #'tether-comment-next
   "C-c C-r" #'tether-resolve
-  "C-c C-d" #'tether-delete-comment)
+  "C-c C-d" #'tether-delete-comment
+  "C-c C-e" #'tether-edit-comment)
 
 (define-derived-mode tether-comment-mode gfm-mode "Tether-Comment"
   "Major mode to write a pull request comment, or to follow a thread.
@@ -171,7 +172,8 @@ The text may take a while to write; the PR head may have moved."
 \\[tether-comment-cancel].  For a comment, the hunk below the text is for
 reference and is not sent.  For a thread, the discussion is above and
 the reply is typed below it; \\[tether-resolve] resolves or reopens the
-thread, \\[tether-delete-comment] deletes a comment.
+thread, \\[tether-edit-comment] edits one of your comments and \\[tether-delete-comment]
+deletes a comment.
 
 \\{tether-comment-mode-map}"
   (add-hook 'kill-buffer-hook #'tether-comment--save-unsent nil t))
@@ -225,27 +227,32 @@ Below the discussion of a thread, above the hunk of a comment."
 
 (defun tether-comment--header (&optional problem)
   "Return the header line of the editor, with PROBLEM when posting failed."
-  (let ((ctx tether-comment--ctx))
+  (let* ((ctx tether-comment--ctx)
+         (pr (tether--label (tether-context-repo ctx)
+                            (oref (tether-context-pullreq ctx) number)))
+         (thread (tether-comment--thread-p)))
     (concat
      (if problem
          (propertize (concat problem "  ") 'face 'error)
        "")
-     (if-let* ((thread (tether-comment--thread-p)))
-         (substitute-command-keys
-          (format "Thread %s %s%s  \\<tether-comment-mode-map>\
+     (substitute-command-keys
+      (cond
+       (thread
+        (format "Thread %s %s%s  \\<tether-comment-mode-map>\
 \\[tether-comment-send] reply  \\[tether-resolve] %s  \\[tether-comment-cancel] close"
-                  (tether--label (tether-context-repo ctx)
-                                 (oref (tether-context-pullreq ctx) number))
-                  (tether--thread-label thread)
-                  (if (tether-thread-resolved thread) ", resolved" "")
-                  (if (tether-thread-resolved thread) "reopen" "resolve")))
-       (substitute-command-keys
+                pr (tether--thread-label thread)
+                (if (tether-thread-resolved thread) ", resolved" "")
+                (if (tether-thread-resolved thread) "reopen" "resolve")))
+       ((plist-get tether-comment--target :edit)
+        (format "Your comment on %s %s  \\<tether-comment-mode-map>\
+\\[tether-comment-send] save  \\[tether-comment-cancel] cancel"
+                pr (tether--thread-label
+                    (plist-get tether-comment--target :edit-thread))))
+       (t
         (format "%s on %s, head %s  \\<tether-comment-mode-map>\
 \\[tether-comment-send] send  \\[tether-comment-cancel] cancel"
-                (tether--target-label tether-comment--target)
-                (tether--label (tether-context-repo ctx)
-                               (oref (tether-context-pullreq ctx) number))
-                (substring (tether-context-head-sha ctx) 0 7)))))))
+                (tether--target-label tether-comment--target) pr
+                (substring (tether-context-head-sha ctx) 0 7))))))))
 
 (defun tether-comment--insert-reference (ctx target)
   "Insert the hunk of TARGET in CTX's diff, read-only, below the text.
@@ -260,6 +267,13 @@ your %s --\n" (tether--drafts-note ctx)))
         (add-text-properties start (point) '(tether-reference t read-only t)))))
    ((plist-get target :thread)
     (tether-comment--insert-discussion (plist-get target :thread)))
+   ((plist-get target :edit)
+    (save-excursion
+      (goto-char (point-max))
+      (let ((start (point)))
+        (insert "\n-- Not sent: the thread, for reference --\n")
+        (tether-threads--insert-comments (plist-get target :edit-thread))
+        (add-text-properties start (point) '(tether-reference t read-only t)))))
    (t (tether-comment--insert-hunk ctx target))))
 
 (defun tether-comment--insert-discussion (thread)
@@ -313,14 +327,17 @@ The reply is typed below it."
 
 (defun tether--buffer-name (ctx target)
   "Return the name of the editor of a comment on TARGET of CTX."
-  (let ((repo (tether-context-repo ctx)))
-    (if-let* ((thread (plist-get target :thread)))
-        (format "*tether-thread %s/%s%s %s*" (oref repo owner) (oref repo name)
-                (tether--label repo (oref (tether-context-pullreq ctx) number))
-                (tether--thread-label thread))
-      (format "*tether-comment %s/%s%s %s*" (oref repo owner) (oref repo name)
-              (tether--label repo (oref (tether-context-pullreq ctx) number))
-              (tether--target-label target)))))
+  (let* ((repo (tether-context-repo ctx))
+         (pr (format "%s/%s%s" (oref repo owner) (oref repo name)
+                     (tether--label repo (oref (tether-context-pullreq ctx) number)))))
+    (cond ((plist-get target :thread)
+           (format "*tether-thread %s %s*" pr
+                   (tether--thread-label (plist-get target :thread))))
+          ((plist-get target :edit)
+           (format "*tether-edit %s %s %s*" pr
+                   (tether--thread-label (plist-get target :edit-thread))
+                   (plist-get (plist-get target :edit) :id)))
+          (t (format "*tether-comment %s %s*" pr (tether--target-label target))))))
 
 (defun tether--edit-comment (ctx target retarget &optional initial)
   "Open the editor of a comment on TARGET of CTX, with INITIAL text.
@@ -371,6 +388,13 @@ When posting fails the editor stays open, saying why."
                          (tether--submit-review ctx (plist-get target :review) body))
                         (thread
                          (tether--reply (tether-context-repo ctx) ctx thread body))
+                        ((plist-get target :edit)
+                         (list :url (tether--update-comment
+                                     (tether-context-repo ctx) ctx
+                                     (plist-get target :edit) body)
+                               :message (format "edited your comment on %s"
+                                                (tether--thread-label
+                                                 (plist-get target :edit-thread)))))
                         (t (tether--post-comment (tether-context-repo ctx) ctx
                                                  target body)))))
           (if (tether-comment--thread-p)
@@ -533,6 +557,24 @@ a reply below the discussion and send it with `tether-comment-send';
   (interactive)
   (let ((ctx (tether--threads-ctx)))
     (tether--open-thread ctx (tether--thread-at-point-or-error ctx))))
+
+;;;###autoload
+(defun tether-edit-comment ()
+  "Edit one of your comments in the review thread at point.
+With several of yours, choose which.  It opens in the comment
+editor; \\<tether-comment-mode-map>\\[tether-comment-send] saves the change."
+  (interactive)
+  (let* ((ctx (tether--threads-ctx))
+         (thread (tether--thread-at-point-or-error ctx))
+         (me (tether--username (tether-context-repo ctx)))
+         (mine (or (seq-filter (lambda (comment) (equal (plist-get comment :author) me))
+                               (tether-thread-comments thread))
+                   (user-error "Tether: no comment of yours on %s"
+                               (tether--thread-label thread))))
+         (comment (tether--choose-comment mine "Edit which comment? "))
+         (target (list :edit comment :edit-thread thread)))
+    (tether--edit-comment ctx target (lambda (_) target)
+                          (string-replace "\r\n" "\n" (or (plist-get comment :body) "")))))
 
 ;;;###autoload
 (defalias 'tether-reply #'tether-show-thread
