@@ -94,7 +94,7 @@ missing commits are fetched without asking."
                          (tether-context-generation first)))
               (should-not (tether-context-current-p first))
               (should (= (length tether-test-requests) 2))
-              ;; `tether-refresh' ignores the fresh cache.
+              ;; `tether-pullreq-refresh' ignores the fresh cache.
               (let ((tether--refreshing t))
                 (should-not (eq (tether-context t t) second)))
               (should (= (length tether-test-requests) 3)))))))))

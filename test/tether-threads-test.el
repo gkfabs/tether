@@ -187,7 +187,7 @@
 
 (ert-deftest tether-threads-test-resolved-before-mode ()
   "A PR resolved before any buffer was in `tether-mode' still gets its threads.
-As when `tether-show-context' runs from magit-status first."
+As when `tether-pullreq-show' runs from magit-status first."
   (should (memq #'tether--context-resolved tether-context-functions))
   (tether-threads-test-with
     (let ((ctx (tether-threads-test--context repo base head nil)))
@@ -221,7 +221,7 @@ As when `tether-show-context' runs from magit-status first."
         (should-not tether--thread-overlays)))))
 
 (ert-deftest tether-threads-test-describe ()
-  "`tether-show-context' says how many threads are open."
+  "`tether-pullreq-show' says how many threads are open."
   (tether-threads-test-with
     (let ((ctx (tether-threads-test--context
                 repo base head
@@ -241,9 +241,9 @@ As when `tether-show-context' runs from magit-status first."
       (tether-threads-test--context repo base head (list thread)))
     (set-buffer (find-file-noselect (expand-file-name "a.el")))
     (goto-char (point-min))
-    (should-error (tether-show-thread) :type 'user-error)
+    (should-error (tether-thread-show) :type 'user-error)
     (forward-line 1)
-    (with-current-buffer (tether-show-thread)
+    (with-current-buffer (tether-thread-show)
       (should (derived-mode-p 'tether-comment-mode))
       (let ((text (buffer-string)))
         (should (string-match-p "^a.el:2  2 comments" text))
@@ -263,18 +263,18 @@ As when `tether-show-context' runs from magit-status first."
     (set-buffer (find-file-noselect (expand-file-name "a.el")))
     (goto-char (point-min))
     (forward-line 1)
-    (tether-next-thread)
+    (tether-thread-next)
     (should (= (line-number-at-pos) 3))
-    (tether-next-thread)
+    (tether-thread-next)
     (should (equal (file-name-nondirectory buffer-file-name) "b.el"))
-    (should-error (tether-next-thread) :type 'user-error)
-    (tether-previous-thread)
+    (should-error (tether-thread-next) :type 'user-error)
+    (tether-thread-previous)
     (should (equal (file-name-nondirectory buffer-file-name) "a.el"))
     (should (= (line-number-at-pos) 3))
     (let ((tether-cycle-across-files nil))
-      (tether-previous-thread)
+      (tether-thread-previous)
       (should (= (line-number-at-pos) 1))
-      (should-error (tether-previous-thread) :type 'user-error))))
+      (should-error (tether-thread-previous) :type 'user-error))))
 
 (ert-deftest tether-threads-test-list ()
   "The list groups by file, keeps outdated threads apart, and visits."
@@ -290,7 +290,7 @@ As when `tether-show-context' runs from magit-status first."
       (set-buffer (with-current-buffer (find-file-noselect (expand-file-name "a.el"))
                     (goto-char (point-min))
                     (forward-line 1)
-                    (tether-threads)))
+                    (tether-thread-list)))
       (should (derived-mode-p 'tether-threads-mode))
       (should (equal (buffer-name) "*tether-threads #7*"))
       (let ((text (buffer-substring-no-properties (point-min) (point-max))))

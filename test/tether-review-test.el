@@ -287,9 +287,9 @@ DRAFTS the draft notes."
       (tether-review-test--github '("R1" . 1)) '(:active t :id "R1" :drafts 1)
     (let ((tether-github--viewers '(("api.github.com" . "carol"))))
       (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil)))
-        (should-error (tether-approve) :type 'user-error))
+        (should-error (tether-review-approve) :type 'user-error))
       (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) t)))
-        (tether-approve))
+        (tether-review-approve))
       (should (tether-review-test--request 'submitPullRequestReview)))))
 
 (ert-deftest tether-review-test-lighter ()

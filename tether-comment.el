@@ -10,9 +10,9 @@
 
 ;;; Commentary:
 
-;; `tether-nitpick' comments on the current line or region of a file
-;; buffer or of the PR diff, `tether-suggest' suggests a change of
-;; them, `tether-nitpick-file' comments on the whole file.
+;; `tether-comment-line' comments on the current line or region of a file
+;; buffer or of the PR diff, `tether-comment-suggest' suggests a change of
+;; them, `tether-comment-file' comments on the whole file.
 ;;
 ;; Lines are checked before anything is typed: they must be in the pull
 ;; request diff, in one hunk, and unchanged locally since the PR head.
@@ -70,7 +70,7 @@ Signal a `user-error' saying why when they cannot take a comment."
 The diff must be CTX's PR diff.  Removed lines are commented on the
 base side; a region must stay on one side of one hunk."
   (unless (tether--diff-range-of-pr-p ctx)
-    (user-error "Tether: this is not the diff of %s; open it with `tether-diff'"
+    (user-error "Tether: this is not the diff of %s; open it with `tether-visit-diff'"
                 (tether--label (tether-context-repo ctx)
                                (oref (tether-context-pullreq ctx) number))))
   (let* ((region (use-region-p))
@@ -162,17 +162,17 @@ The text may take a while to write; the PR head may have moved."
   "C-c C-s" #'tether-comment-toggle-suggestion
   "M-p" #'tether-comment-previous
   "M-n" #'tether-comment-next
-  "C-c C-r" #'tether-resolve
-  "C-c C-d" #'tether-delete-comment
-  "C-c C-e" #'tether-edit-comment)
+  "C-c C-r" #'tether-thread-resolve
+  "C-c C-d" #'tether-comment-delete
+  "C-c C-e" #'tether-comment-edit)
 
 (define-derived-mode tether-comment-mode gfm-mode "Tether-Comment"
   "Major mode to write a pull request comment, or to follow a thread.
 \\<tether-comment-mode-map>Send with \\[tether-comment-send], close with \
 \\[tether-comment-cancel].  For a comment, the hunk below the text is for
 reference and is not sent.  For a thread, the discussion is above and
-the reply is typed below it; \\[tether-resolve] resolves or reopens the
-thread, \\[tether-edit-comment] edits one of your comments and \\[tether-delete-comment]
+the reply is typed below it; \\[tether-thread-resolve] resolves or reopens the
+thread, \\[tether-comment-edit] edits one of your comments and \\[tether-comment-delete]
 deletes a comment.
 
 \\{tether-comment-mode-map}"
@@ -239,7 +239,7 @@ Below the discussion of a thread, above the hunk of a comment."
       (cond
        (thread
         (format "Thread %s %s%s  \\<tether-comment-mode-map>\
-\\[tether-comment-send] reply  \\[tether-resolve] %s  \\[tether-comment-cancel] close"
+\\[tether-comment-send] reply  \\[tether-thread-resolve] %s  \\[tether-comment-cancel] close"
                 pr (tether--thread-label thread)
                 (if (tether-thread-resolved thread) ", resolved" "")
                 (if (tether-thread-resolved thread) "reopen" "resolve")))
@@ -533,19 +533,19 @@ buffer is gone; reopen this comment"))
                             (and suggest (tether--suggestion ctx target))))))
 
 ;;;###autoload
-(defun tether-nitpick (&optional pick)
+(defun tether-comment-line (&optional pick)
   "Comment on the current line or the active region in its pull request.
 The lines must be in the pull request diff, in one hunk, and
-unchanged locally since the PR head.  In the PR diff (`tether-diff'),
+unchanged locally since the PR head.  In the PR diff (`tether-visit-diff'),
 removed lines can be commented too.  The comment is written in an
 editor.  With prefix argument PICK, choose the pull request."
   (interactive "P")
   (tether--start-comment pick))
 
 ;;;###autoload
-(defun tether-suggest (&optional pick)
+(defun tether-comment-suggest (&optional pick)
   "Suggest a change of the current line or region in its pull request.
-Like `tether-nitpick', with the editor starting with a suggestion
+Like `tether-comment-line', with the editor starting with a suggestion
 block of the lines, to edit into the proposed text.  With prefix
 argument PICK, choose the pull request."
   (interactive "P")
@@ -557,18 +557,18 @@ argument PICK, choose the pull request."
     (tether--edit-comment ctx target (lambda (_) target))))
 
 ;;;###autoload
-(defun tether-show-thread ()
+(defun tether-thread-show ()
   "Show the review thread at point, every comment, with a reply area.
 On a line with a thread, in the PR diff or in the thread list.  Type
 a reply below the discussion and send it with `tether-comment-send';
-`tether-resolve' resolves or reopens the thread, and
+`tether-thread-resolve' resolves or reopens the thread, and
 `tether-comment-cancel' closes it."
   (interactive)
   (let ((ctx (tether--threads-ctx)))
     (tether--open-thread ctx (tether--thread-at-point-or-error ctx))))
 
 ;;;###autoload
-(defun tether-edit-comment ()
+(defun tether-comment-edit ()
   "Edit one of your comments in the review thread at point.
 With several of yours, choose which.  It opens in the comment
 editor; \\<tether-comment-mode-map>\\[tether-comment-send] saves the change."
@@ -586,8 +586,8 @@ editor; \\<tether-comment-mode-map>\\[tether-comment-send] saves the change."
                           (string-replace "\r\n" "\n" (or (plist-get comment :body) "")))))
 
 ;;;###autoload
-(defalias 'tether-reply #'tether-show-thread
-  "Reply in the review thread at point: the same as `tether-show-thread'.")
+(defalias 'tether-thread-reply #'tether-thread-show
+  "Reply in the review thread at point: the same as `tether-thread-show'.")
 
 (defun tether-comment--threads-arrived (ctx)
   "Show the newly fetched threads of CTX in the thread buffers open."
@@ -606,7 +606,7 @@ editor; \\<tether-comment-mode-map>\\[tether-comment-send] saves the change."
 (add-hook 'tether-threads-functions #'tether-comment--threads-arrived)
 
 ;;;###autoload
-(defun tether-nitpick-file (&optional pick)
+(defun tether-comment-file (&optional pick)
   "Comment on the whole file of the current buffer in its pull request.
 With prefix argument PICK, choose the pull request."
   (interactive "P")

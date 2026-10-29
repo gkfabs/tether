@@ -152,7 +152,7 @@
         (should-not tether-test-requests)))))
 
 (ert-deftest tether-ci-test-refresh ()
-  "`tether-refresh' fetches the CI status of its repository too."
+  "`tether-pullreq-refresh' fetches the CI status of its repository too."
   (tether-ci-test-with
     (let ((fetched nil))
       (cl-letf (((symbol-function 'tether--fetch-ci)

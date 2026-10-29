@@ -15,11 +15,11 @@
 ;;
 ;; - `tether-visit-file': the file at the line, in the worktree when
 ;;   the PR is checked out, else the PR head's version (a blob buffer);
-;; - `tether-diff': the PR diff, at the hunk of the line;
-;; - `tether-topic': forge's buffer of the pull request;
+;; - `tether-visit-diff': the PR diff, at the hunk of the line;
+;; - `tether-visit-topic': forge's buffer of the pull request;
 ;; - `tether-browse': the PR's diff in the browser, at the line;
-;; - `tether-status': magit-status of the worktree;
-;; - `tether-review-pullreq': pick any PR, checked out or not, and
+;; - `tether-visit-status': magit-status of the worktree;
+;; - `tether-pullreq-open': pick any PR, checked out or not, and
 ;;   open its diff.
 ;;
 ;; The line is the PR head's line: from a file buffer it is mapped
@@ -185,7 +185,7 @@ on a line of the PR head (side `right') or only of its base (side
                  (if line (format ":%d" line) ""))))))
 
 ;;;###autoload
-(defun tether-diff (&optional pick)
+(defun tether-visit-diff (&optional pick)
   "Show the pull request diff, at the hunk of the current line.
 With prefix argument PICK, choose the pull request."
   (interactive "P")
@@ -217,7 +217,7 @@ ANCHOR is the part after #, if any."
 (declare-function tether--open-thread "tether-comment" (ctx thread))
 
 ;;;###autoload
-(defun tether-review-url (url)
+(defun tether-pullreq-open-url (url)
   "Review the pull request at URL, as copied from the browser.
 Shows its diff, from the local clone forge knows for the repository;
 for a link to a comment, also shows its thread."
@@ -260,7 +260,7 @@ run `forge-pull'" (tether--label repo number))))
         (tether--open-thread ctx thread)))))
 
 ;;;###autoload
-(defun tether-review-commit (commit)
+(defun tether-commit-review (commit)
   "Review COMMIT alone: show its diff, where comments target it.
 COMMIT is the one at point in magit, or read.  It must be one of the
 pull request's commits.  Neither GitHub nor GitLab documents
@@ -285,10 +285,10 @@ behavior that may change."
                             (oref (tether-context-pullreq ctx) number)))))
 
 ;;;###autoload
-(defun tether-review-pullreq ()
+(defun tether-pullreq-open ()
   "Choose a pull request and show its diff, whatever the branch.
 Its commits are fetched when missing; from the diff, comment with
-`tether-nitpick' and open files with `tether-visit-file'."
+`tether-comment-line' and open files with `tether-visit-file'."
   (interactive)
   (tether--show-diff (tether-context t t)))
 
@@ -340,13 +340,13 @@ edits; else, or with HEAD non-nil, the PR head's version."
         (forward-line (1- target))))))
 
 ;;;###autoload
-(defun tether-topic ()
+(defun tether-visit-topic ()
   "Show forge's buffer of the pull request."
   (interactive)
   (forge-visit-pullreq (tether-context-pullreq (tether-context t))))
 
 ;;;###autoload
-(defun tether-status ()
+(defun tether-visit-status ()
   "Show `magit-status' of the pull request's worktree."
   (interactive)
   (magit-status-setup-buffer (tether-context-toplevel (tether-context t))))

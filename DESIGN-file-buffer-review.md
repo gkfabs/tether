@@ -64,7 +64,7 @@ first task.
 
 ## MVP
 
-Comment on a line/region from a file buffer (`tether-nitpick`), GitHub +
+Comment on a line/region from a file buffer (`tether-comment-line`), GitHub +
 GitLab, posted directly (no drafts), **plus the navigation transient** (jump
 matrix below). Then: inline threads, then draft reviews.
 
@@ -74,7 +74,7 @@ matrix below). Then: inline threads, then draft reviews.
 comments, diff and topic stay one keystroke away. Navigation is the core of the
 package, so the name is about that, not only commenting.
 
-- Commenting command: `tether-nitpick`.
+- Commenting command: `tether-comment-line`.
 - No recipe in `melpa/melpa/recipes` (checked 2026-10-06). Still to check:
   GNU ELPA and NonGNU ELPA.
 - Alternatives (also free on MELPA): `waypoint`, `junction`, `wayfinder`.
@@ -130,7 +130,7 @@ Every view reaches every other one, keeping file + line where it makes sense.
 
 | code-review feature                                  | Where                                       | In tether                                                    |
 |------------------------------------------------------|---------------------------------------------|--------------------------------------------------------------|
-| Comment editor (markdown, `C-c C-c`/`C-c C-k`, `C-c @`) | `code-review-comment.el`                    | buffer opened by `tether-nitpick`, no emojify                |
+| Comment editor (markdown, `C-c C-c`/`C-c C-k`, `C-c @`) | `code-review-comment.el`                    | buffer opened by `tether-comment-line`, no emojify                |
 | Code suggestions                                     | `code-review-comment.el`                    | region prefilled into a ```` ```suggestion ```` block        |
 | Outdated comments with original hunk                 | `code-review-section.el`                    | thread list shows them with the stored hunk, not in the file |
 | Approve / request changes / LGTM                     | `code-review-actions.el` (`code-review-submit-*`) | verdict when submitting a draft review; GitLab approve is a separate endpoint |

@@ -48,29 +48,29 @@ The `tether` menu (`C-c t @` with the binding above, or `@` in
 
 | Key | Command | |
 |-----|---------|-|
-| `c` | `tether-nitpick` | comment on the current line or region |
-| `S` | `tether-suggest` | suggest a change of the line or region |
-| `F` | `tether-nitpick-file` | comment on the whole file |
+| `c` | `tether-comment-line` | comment on the current line or region |
+| `S` | `tether-comment-suggest` | suggest a change of the line or region |
+| `F` | `tether-comment-file` | comment on the whole file |
 | `f` | `tether-visit-file` | the file at the line (the PR head's version when the PR is not checked out) |
-| `d` | `tether-diff` | the PR diff, at the hunk of the line |
-| `t` | `tether-topic` | forge's buffer of the pull request |
+| `d` | `tether-visit-diff` | the PR diff, at the hunk of the line |
+| `t` | `tether-visit-topic` | forge's buffer of the pull request |
 | `b` | `tether-browse` | the PR diff in the browser, at the line |
 | `P` | `tether-browse-ci` | the CI of the PR at point (in a list of PRs) or of the buffer, in the browser |
-| `m` | `tether-status` | magit-status |
-| `v` | `tether-review-pullreq` | pick any pull request and open its diff |
-| `C` | `tether-review-commit` | review the commit at point alone |
-| `u` | `tether-review-url` | review the pull request of a URL copied from the browser; a comment link also shows its thread |
-| `l` | `tether-threads` | the review threads, by file |
-| `.` | `tether-show-thread` | the thread of the current line: every comment, and a reply area below (`tether-reply` is the same) |
-| `H` | `tether-toggle-resolved` | show or hide resolved threads in files |
-| `R` | `tether-resolve` | resolve the thread at point, or reopen it |
-| `e` | `tether-edit-comment` | edit one of your comments in the thread of the line (`C-c C-e` in a thread window) |
-| `k` | `tether-delete-comment` | delete one of your comments, after confirmation |
+| `m` | `tether-visit-status` | magit-status |
+| `v` | `tether-pullreq-open` | pick any pull request and open its diff |
+| `C` | `tether-commit-review` | review the commit at point alone |
+| `u` | `tether-pullreq-open-url` | review the pull request of a URL copied from the browser; a comment link also shows its thread |
+| `l` | `tether-thread-list` | the review threads, by file |
+| `.` | `tether-thread-show` | the thread of the current line: every comment, and a reply area below (`tether-thread-reply` is the same) |
+| `H` | `tether-thread-toggle-resolved` | show or hide resolved threads in files |
+| `R` | `tether-thread-resolve` | resolve the thread at point, or reopen it |
+| `e` | `tether-comment-edit` | edit one of your comments in the thread of the line (`C-c C-e` in a thread window) |
+| `k` | `tether-comment-delete` | delete one of your comments, after confirmation |
 | `w` | `tether-review-start` | start a draft review: comments are drafts until submitted |
 | `W` | `tether-review-submit` | publish the drafts as a comment, an approval or a change request |
 | `X` | `tether-review-discard` | delete the draft review |
-| `A` | `tether-approve` | approve the pull request |
-| `n`, `p` | `tether-next-thread`, `tether-previous-thread` | go from thread to thread, across files |
+| `A` | `tether-review-approve` | approve the pull request |
+| `n`, `p` | `tether-thread-next`, `tether-thread-previous` | go from thread to thread, across files |
 | `s`, `g`, `x` | | show, refresh, forget what tether knows about the PR |
 
 Comments are written in a Markdown buffer showing the hunk for reference:
@@ -98,20 +98,20 @@ fringe mark and the start of the discussion at the end of the line
 the open ones (`!540·3`). The thread list keeps outdated threads apart,
 with the hunk they were written on.
 
-The PR diff (`tether-diff`, or a magit diff of the same range) shows the
+The PR diff (`tether-visit-diff`, or a magit diff of the same range) shows the
 open threads in full under their line, removed lines included, and `n`/`p`
 go from thread to thread there. So does magit's commit buffer (`RET` on a
 commit in the log), when the commit belongs to a pull request tether
 resolved: the threads written on that commit, and those whose line has not
 changed since. Comments from there go on that commit, as with
-`tether-review-commit`. `tether-diff-thread-comments` set to nil shows
+`tether-commit-review`. `tether-diff-thread-comments` set to nil shows
 only the start of each thread.
 
 Pressing `g` in magit-status also fetches the CI status of the open pull
 requests (GitLab's head pipeline, GitHub's checks), in one request per
 repository, and shows it at the end of each line of forge's pull request
 list: ✓ passed, ✗ failed, ● running, ⊘ canceled or skipped. The mode line
-shows the one of the buffer's pull request (`!540·3✓`); `tether-refresh`
+shows the one of the buffer's pull request (`!540·3✓`); `tether-pullreq-refresh`
 fetches it too. Nothing else does: a magit-status refreshing by itself,
 after a commit for example, shows what was fetched last.
 `tether-ci-status` set to nil turns it off. On a branch without a pull
@@ -124,6 +124,12 @@ you are not one (tether asks first), and tether checks it was recorded.
 
 On GitHub, while you have a pending review (started on github.com),
 comments are added to it: GitHub refuses single comments then.
+
+Version 0.2.0 renamed the commands so that each starts with what it acts
+on: `tether-comment-…`, `tether-thread-…`, `tether-review-…`,
+`tether-visit-…`, `tether-pullreq-…`. The keys did not change, and the
+former names (`tether-nitpick`, `tether-diff`, …) still work, with a
+warning, until a later release removes them.
 
 ## Related packages
 

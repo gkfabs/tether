@@ -6,7 +6,7 @@
 
 ;;; Commentary:
 
-;; `tether-nitpick', `tether-suggest' and `tether-nitpick-file' end to
+;; `tether-comment-line', `tether-comment-suggest' and `tether-comment-file' end to
 ;; end: from a file buffer of a git repository to the request posted,
 ;; through the editor, with forge's database and the API stubbed.
 ;;
@@ -88,7 +88,7 @@ Sending is followed by fetching the threads again."
   "The editor opens on the checked line, shows the hunk, and posts."
   (tether-comment-test-with (tether-test-github-repo)
     (tether-comment-test--goto-line 2)
-    (tether-nitpick)
+    (tether-comment-line)
     (should (derived-mode-p 'tether-comment-mode))
     (should (equal (buffer-name) "*tether-comment o/r#7 a.el:2*"))
     (should (string-match-p "^\\+TWO$" (buffer-string)))
@@ -106,7 +106,7 @@ Sending is followed by fetching the threads again."
   (tether-comment-test-with (tether-test-github-repo)
     (push-mark (point-min) t t)
     (goto-char (point-max))
-    (tether-nitpick)
+    (tether-comment-line)
     (should (equal (buffer-name) "*tether-comment o/r#7 a.el:1-3*"))
     (insert "x")
     (tether-comment-send)
@@ -117,11 +117,11 @@ Sending is followed by fetching the threads again."
   "Commenting the same line again shows the editor already open."
   (tether-comment-test-with (tether-test-github-repo)
     (tether-comment-test--goto-line 2)
-    (let ((editor (progn (tether-nitpick) (current-buffer))))
+    (let ((editor (progn (tether-comment-line) (current-buffer))))
       (insert "draft")
       (should (eq (with-current-buffer buffer
                     (tether-comment-test--goto-line 2)
-                    (tether-nitpick))
+                    (tether-comment-line))
                   editor))
       (should (equal (tether-comment--body) "draft")))))
 
@@ -129,15 +129,15 @@ Sending is followed by fetching the threads again."
   "Cancelled or killed text comes back with M-p."
   (tether-comment-test-with (tether-test-github-repo)
     (tether-comment-test--goto-line 2)
-    (tether-nitpick)
+    (tether-comment-line)
     (insert "first thought")
     (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) t)))
       (tether-comment-cancel))
-    (set-buffer (with-current-buffer buffer (tether-nitpick)))
+    (set-buffer (with-current-buffer buffer (tether-comment-line)))
     (insert "second thought")
     (kill-buffer (current-buffer))
     (should (equal tether--comment-history '("second thought" "first thought")))
-    (set-buffer (with-current-buffer buffer (tether-nitpick)))
+    (set-buffer (with-current-buffer buffer (tether-comment-line)))
     (tether-comment-previous)
     (should (equal (tether-comment--body) "second thought"))
     (tether-comment-previous)
@@ -150,7 +150,7 @@ Sending is followed by fetching the threads again."
   "When posting fails, the editor stays open with its text and says why."
   (tether-comment-test-with (tether-test-github-repo)
     (tether-comment-test--goto-line 2)
-    (tether-nitpick)
+    (tether-comment-line)
     (insert "Keep me")
     (setq tether-comment-test--post-error '(error http 500 ((message . "Oops"))))
     (let ((editor (current-buffer)))
@@ -165,7 +165,7 @@ Sending is followed by fetching the threads again."
   "If the context changed while writing, the target is computed again."
   (tether-comment-test-with (tether-test-github-repo)
     (tether-comment-test--goto-line 2)
-    (tether-nitpick)
+    (tether-comment-line)
     (insert "x")
     ;; A local commit moves HEAD: the context is resolved again.
     (let ((default-directory (file-name-directory (buffer-file-name buffer))))
@@ -179,7 +179,7 @@ Sending is followed by fetching the threads again."
 (ert-deftest tether-comment-test-suggest-github ()
   (tether-comment-test-with (tether-test-github-repo)
     (tether-comment-test--goto-line 2)
-    (tether-suggest)
+    (tether-comment-suggest)
     (should (equal (tether-comment--body) "```suggestion\nTWO\n```"))
     ;; Toggled off, and on again.
     (tether-comment-toggle-suggestion)
@@ -192,14 +192,14 @@ Sending is followed by fetching the threads again."
   (tether-comment-test-with (tether-test-gitlab-repo)
     (push-mark (point-min) t t)
     (goto-char (point-max))
-    (tether-suggest)
+    (tether-comment-suggest)
     (should (equal (tether-comment--body)
                    "```suggestion:-2+0\none\nTWO\nthree\n```"))))
 
 (ert-deftest tether-comment-test-mention ()
   (tether-comment-test-with (tether-test-github-repo)
     (tether-comment-test--goto-line 2)
-    (tether-nitpick)
+    (tether-comment-line)
     (cl-letf (((symbol-function 'completing-read)
                (lambda (_prompt collection &rest _)
                  (should (member "alice" collection))
@@ -210,7 +210,7 @@ Sending is followed by fetching the threads again."
 (ert-deftest tether-comment-test-file ()
   "A comment on the whole file has no hunk to show."
   (tether-comment-test-with (tether-test-github-repo)
-    (tether-nitpick-file)
+    (tether-comment-file)
     (should (equal (buffer-name) "*tether-comment o/r#7 a.el*"))
     (should (equal (buffer-string) ""))
     (insert "Split it")

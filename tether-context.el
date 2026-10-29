@@ -14,7 +14,7 @@
 ;; request, and the commits its diff is made of, according to the API.
 ;; It is resolved once per worktree and pull request, then cached until
 ;; HEAD moves, the branch changes, `tether-context-ttl' passes, or
-;; `tether-refresh' is called.
+;; `tether-pullreq-refresh' is called.
 ;;
 ;; `(tether-context)' only returns a cached context and never prompts or
 ;; touches the network; `(tether-context t)' resolves one, which may
@@ -95,10 +95,10 @@ their PR whatever the branch.")
   "Branches for which recording the pull request was already offered.")
 
 (defvar tether-refresh-functions nil
-  "Functions called with the context `tether-refresh' just resolved.")
+  "Functions called with the context `tether-pullreq-refresh' just resolved.")
 
 (defvar tether--refreshing nil
-  "Non-nil while `tether-refresh' runs: resolve without the cache.")
+  "Non-nil while `tether-pullreq-refresh' runs: resolve without the cache.")
 
 ;;;; Finding the pull request
 
@@ -444,7 +444,7 @@ DEMAND and PICK are as for `tether-context'."
       (accept-process-output nil 0.05))))
 
 ;;;###autoload
-(defun tether-show-context (&optional pick)
+(defun tether-pullreq-show (&optional pick)
   "Show the pull request of the current buffer and its commits.
 With prefix argument PICK, choose the pull request."
   (interactive "P")
@@ -453,7 +453,7 @@ With prefix argument PICK, choose the pull request."
     (message "Tether: %s" (tether--describe ctx))))
 
 ;;;###autoload
-(defun tether-refresh (&optional pick)
+(defun tether-pullreq-refresh (&optional pick)
   "Resolve the pull request of the current buffer again.
 With prefix argument PICK, choose the pull request."
   (interactive "P")

@@ -138,7 +138,7 @@
 (ert-deftest tether-reply-test-resolve-command ()
   "From the thread window: resolve, and fetch the threads again."
   (tether-reply-test-with
-    (tether-resolve)
+    (tether-thread-resolve)
     (should (memq 'resolveReviewThread
                   (mapcar #'tether-test-graphql-operation tether-test-requests)))
     (should (eq (tether-test-graphql-operation (car tether-test-requests))
@@ -153,14 +153,14 @@
                                 '("alice: Off by one?" "bob: Fixed: thanks")))
                  "bob: Fixed: thanks"))
               ((symbol-function 'yes-or-no-p) (lambda (_) nil)))
-      (tether-delete-comment)
+      (tether-comment-delete)
       (should-not tether-test-requests))
     (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) "bob: Fixed: thanks"))
               ((symbol-function 'yes-or-no-p)
                (lambda (prompt)
                  (should (equal prompt "Delete bob's comment “Fixed: thanks”? "))
                  t)))
-      (tether-delete-comment)
+      (tether-comment-delete)
       (should (equal (plist-get
                       (seq-find (lambda (r) (eq (tether-test-graphql-operation r)
                                                 'deletePullRequestReviewComment))
@@ -172,11 +172,11 @@
   "Edit your comment in the editor: only yours, saved with C-c C-c."
   (tether-reply-test-with
     (cl-letf (((symbol-function 'tether--username) (lambda (_) "carol")))
-      (should-error (tether-edit-comment) :type 'user-error))
+      (should-error (tether-comment-edit) :type 'user-error))
     (cl-letf (((symbol-function 'tether--username) (lambda (_) "bob"))
               ((symbol-function 'completing-read)
                (lambda (&rest _) (error "Only one comment is bob's"))))
-      (tether-edit-comment))
+      (tether-comment-edit))
     (should (equal (buffer-name) "*tether-edit o/r#7 a.el:2 C2*"))
     (should (equal (tether-comment--body) "Fixed: thanks"))
     (should (string-search "Off by one?" (buffer-string)))
@@ -218,7 +218,7 @@
   (tether-reply-test-with
     (let ((editor (current-buffer)))
       (should (equal (buffer-name editor) "*tether-thread o/r#7 a.el:2*"))
-      (should (eq (tether-reply) editor))
+      (should (eq (tether-thread-reply) editor))
       (let ((text (buffer-string)))
         (should (< (string-match "Off by one" text)
                    (string-match "Fixed: thanks" text)

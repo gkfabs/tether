@@ -19,7 +19,7 @@
 ;; - `tether-browse-ci' opens it in the browser.
 ;;
 ;; Fetched only when asked: `g' in a buffer listing pull requests, or
-;; `tether-refresh'.  Never when a buffer is refreshed by itself, after
+;; `tether-pullreq-refresh'.  Never when a buffer is refreshed by itself, after
 ;; a commit for example.  One request per repository, for all its open
 ;; pull requests.
 
@@ -35,7 +35,7 @@
 (defcustom tether-ci-status t
   "Whether `g' in `magit-status' also fetches the CI status of pull requests.
 It shows at the end of each pull request line and in the mode line.
-`tether-refresh' fetches it too.  Nothing else does."
+`tether-pullreq-refresh' fetches it too.  Nothing else does."
   :type 'boolean
   :group 'tether)
 

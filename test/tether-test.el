@@ -30,5 +30,17 @@
       (should (re-search-forward "^;; Version: \\(.+\\)$" nil t))
       (should (equal (match-string 1) tether-version)))))
 
+(ert-deftest tether-test-former-names ()
+  "The commands renamed in 0.2.0 still work under their former names."
+  (pcase-dolist (`(,old . ,new)
+                 '((tether-nitpick . tether-comment-line)
+                   (tether-diff . tether-visit-diff)
+                   (tether-threads . tether-thread-list)
+                   (tether-reply . tether-thread-reply)
+                   (tether-refresh . tether-pullreq-refresh)))
+    (should (commandp new))
+    (should (eq (indirect-function old) (indirect-function new)))
+    (should (get old 'byte-obsolete-info))))
+
 (provide 'tether-test)
 ;;; tether-test.el ends here

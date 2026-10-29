@@ -216,33 +216,33 @@ Uses the cached context only, so it never makes a request."
   :doc "Tether commands, to bind under a prefix of your choice.
 For example: (keymap-set tether-mode-map \"C-c t\" tether-prefix-map)."
   "@" #'tether
-  "c" #'tether-nitpick
-  "l" #'tether-threads
-  "." #'tether-show-thread
-  "r" #'tether-reply
-  "R" #'tether-resolve
-  "k" #'tether-delete-comment
-  "e" #'tether-edit-comment
-  "H" #'tether-toggle-resolved
+  "c" #'tether-comment-line
+  "l" #'tether-thread-list
+  "." #'tether-thread-show
+  "r" #'tether-thread-reply
+  "R" #'tether-thread-resolve
+  "k" #'tether-comment-delete
+  "e" #'tether-comment-edit
+  "H" #'tether-thread-toggle-resolved
   "w" #'tether-review-start
   "W" #'tether-review-submit
   "X" #'tether-review-discard
-  "A" #'tether-approve
-  "n" #'tether-next-thread
-  "p" #'tether-previous-thread
-  "S" #'tether-suggest
-  "F" #'tether-nitpick-file
+  "A" #'tether-review-approve
+  "n" #'tether-thread-next
+  "p" #'tether-thread-previous
+  "S" #'tether-comment-suggest
+  "F" #'tether-comment-file
   "f" #'tether-visit-file
-  "d" #'tether-diff
-  "t" #'tether-topic
+  "d" #'tether-visit-diff
+  "t" #'tether-visit-topic
   "b" #'tether-browse
   "P" #'tether-browse-ci
-  "m" #'tether-status
-  "v" #'tether-review-pullreq
-  "u" #'tether-review-url
-  "C" #'tether-review-commit
-  "s" #'tether-show-context
-  "g" #'tether-refresh)
+  "m" #'tether-visit-status
+  "v" #'tether-pullreq-open
+  "u" #'tether-pullreq-open-url
+  "C" #'tether-commit-review
+  "s" #'tether-pullreq-show
+  "g" #'tether-pullreq-refresh)
 
 (defvar-keymap tether-mode-map
   :doc "Keymap of `tether-mode'.
@@ -266,36 +266,36 @@ modes, so bind `tether-prefix-map' where you like.")
   "Comment on the pull request of the current buffer and move around it."
   [:description tether--menu-description
    ["Comment"
-    ("c" "line or region" tether-nitpick)
-    ("S" "suggest a change" tether-suggest)
-    ("F" "whole file" tether-nitpick-file)]
+    ("c" "line or region" tether-comment-line)
+    ("S" "suggest a change" tether-comment-suggest)
+    ("F" "whole file" tether-comment-file)]
    ["Go to"
     ("f" "file at line" tether-visit-file)
-    ("d" "PR diff at hunk" tether-diff)
-    ("t" "forge topic" tether-topic)
+    ("d" "PR diff at hunk" tether-visit-diff)
+    ("t" "forge topic" tether-visit-topic)
     ("b" "browser at line" tether-browse)
     ("P" "CI in the browser" tether-browse-ci)
-    ("m" "magit-status" tether-status)]
+    ("m" "magit-status" tether-visit-status)]
    ["Threads"
-    ("l" "list" tether-threads)
-    ("." "this line's thread, reply" tether-show-thread)
-    ("R" "resolve / reopen" tether-resolve)
-    ("e" "edit a comment" tether-edit-comment)
-    ("k" "delete a comment" tether-delete-comment)
-    ("H" "show / hide resolved" tether-toggle-resolved)
-    ("n" "next" tether-next-thread :transient t)
-    ("p" "previous" tether-previous-thread :transient t)]
+    ("l" "list" tether-thread-list)
+    ("." "this line's thread, reply" tether-thread-show)
+    ("R" "resolve / reopen" tether-thread-resolve)
+    ("e" "edit a comment" tether-comment-edit)
+    ("k" "delete a comment" tether-comment-delete)
+    ("H" "show / hide resolved" tether-thread-toggle-resolved)
+    ("n" "next" tether-thread-next :transient t)
+    ("p" "previous" tether-thread-previous :transient t)]
    ["Review"
     ("w" "start a review" tether-review-start)
     ("W" "submit the review" tether-review-submit)
     ("X" "discard the review" tether-review-discard)
-    ("A" "approve" tether-approve)]
+    ("A" "approve" tether-review-approve)]
    ["Pull request"
-    ("v" "review another" tether-review-pullreq)
-    ("u" "review from a URL" tether-review-url)
-    ("C" "review one commit" tether-review-commit)
-    ("s" "show" tether-show-context)
-    ("g" "refresh" tether-refresh)
+    ("v" "review another" tether-pullreq-open)
+    ("u" "review from a URL" tether-pullreq-open-url)
+    ("C" "review one commit" tether-commit-review)
+    ("s" "show" tether-pullreq-show)
+    ("g" "refresh" tether-pullreq-refresh)
     ("x" "clear cache" tether-clear-cache)]])
 
 (defun tether--add-to-dispatch (prefix after)
@@ -417,6 +417,55 @@ no request when a file is opened."
 (add-hook 'tether-threads-functions #'tether--refresh-worktree)
 (add-hook 'tether-review-functions #'tether--refresh-worktree)
 (add-hook 'tether-ci-functions #'tether--ci-arrived)
+
+;;;; Former names
+
+;; Renamed in 0.2.0 so that each command starts with what it acts on:
+;; `tether-comment-...', `tether-thread-...', `tether-review-...',
+;; `tether-visit-...', `tether-pullreq-...'.  The keys did not change.
+
+;;;###autoload
+(define-obsolete-function-alias 'tether-nitpick #'tether-comment-line "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-nitpick-file #'tether-comment-file "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-suggest #'tether-comment-suggest "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-edit-comment #'tether-comment-edit "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-delete-comment #'tether-comment-delete "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-threads #'tether-thread-list "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-show-thread #'tether-thread-show "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-reply #'tether-thread-reply "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-resolve #'tether-thread-resolve "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-next-thread #'tether-thread-next "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-previous-thread #'tether-thread-previous "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-toggle-resolved #'tether-thread-toggle-resolved "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-approve #'tether-review-approve "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-diff #'tether-visit-diff "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-topic #'tether-visit-topic "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-status #'tether-visit-status "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-review-pullreq #'tether-pullreq-open "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-review-url #'tether-pullreq-open-url "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-review-commit #'tether-commit-review "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-show-context #'tether-pullreq-show "0.2.0")
+;;;###autoload
+(define-obsolete-function-alias 'tether-refresh #'tether-pullreq-refresh "0.2.0")
 
 (provide 'tether)
 ;;; tether.el ends here

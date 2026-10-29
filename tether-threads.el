@@ -15,9 +15,9 @@
 ;;
 ;; - in file buffers, a fringe mark and the start of the thread at the
 ;;   end of its line;
-;; - `tether-next-thread' and `tether-previous-thread' go from thread to
+;; - `tether-thread-next' and `tether-thread-previous' go from thread to
 ;;   thread, across files;
-;; - `tether-threads' lists them, by file, with the outdated ones and
+;; - `tether-thread-list' lists them, by file, with the outdated ones and
 ;;   the hunk they were written on.
 
 ;;; Code:
@@ -34,7 +34,7 @@
 
 (defcustom tether-show-resolved t
   "Whether to show resolved threads in file buffers, dimmed.
-`tether-toggle-resolved' switches it."
+`tether-thread-toggle-resolved' switches it."
   :type 'boolean
   :group 'tether)
 
@@ -51,7 +51,7 @@ thread at the end of its line.  Resolved threads always show that way."
   :group 'tether)
 
 (defcustom tether-cycle-across-files t
-  "Whether `tether-next-thread' goes on to the next file's threads."
+  "Whether `tether-thread-next' goes on to the next file's threads."
   :type 'boolean
   :group 'tether)
 
@@ -305,7 +305,7 @@ PLACE returns the (SIDE . LINE) of a thread in the diff, or nil."
 
 (defun tether--update-pr-diff-threads ()
   "Show the review threads in a magit diff buffer of a pull request.
-The PR diff `tether-diff' opens, or a magit diff of the same range;
+The PR diff `tether-visit-diff' opens, or a magit diff of the same range;
 in a single-commit review, the threads on that commit.  Never makes
 a request."
   (with-demoted-errors "Tether: %S"
@@ -344,7 +344,7 @@ a request."
 (defun tether--update-revision-threads ()
   "Show the review threads in a magit commit buffer.
 Only for a commit of a pull request tether already resolved; comments
-from the buffer then target that commit, as from `tether-review-commit',
+from the buffer then target that commit, as from `tether-commit-review',
 and `tether-mode' is on there as in files.  Not for a merge commit:
 magit shows it as a combined diff, whose lines tether cannot place.
 Never makes a request."
@@ -458,14 +458,14 @@ In a diff buffer showing threads, only to the threads shown there."
     (message "Tether: %s" (tether--thread-first-line thread))))
 
 ;;;###autoload
-(defun tether-next-thread ()
+(defun tether-thread-next ()
   "Go to the next review thread of the pull request.
 In a diff or commit buffer showing threads, to the next one there."
   (interactive)
   (tether--go-to-thread t))
 
 ;;;###autoload
-(defun tether-previous-thread ()
+(defun tether-thread-previous ()
   "Go to the previous review thread of the pull request.
 In a diff or commit buffer showing threads, to the previous one there."
   (interactive)
@@ -484,12 +484,12 @@ In a diff or commit buffer showing threads, to the previous one there."
   "RET" #'tether-threads-visit
   "d" #'tether-threads-diff
   "b" #'tether-threads-browse
-  "SPC" #'tether-show-thread
-  "r" #'tether-reply
-  "R" #'tether-resolve
-  "k" #'tether-delete-comment
-  "t" #'tether-topic
-  "m" #'tether-status
+  "SPC" #'tether-thread-show
+  "r" #'tether-thread-reply
+  "R" #'tether-thread-resolve
+  "k" #'tether-comment-delete
+  "t" #'tether-visit-topic
+  "m" #'tether-visit-status
   "g" #'tether-threads-refresh)
 
 (define-derived-mode tether-threads-mode magit-section-mode "Tether-Threads"
@@ -600,8 +600,8 @@ fetches the threads again.
       (tether-threads--render))
     buffer))
 
-(declare-function tether-reply "tether-comment")
-(declare-function tether-show-thread "tether-comment")
+(declare-function tether-thread-reply "tether-comment")
+(declare-function tether-thread-show "tether-comment")
 
 (defun tether--threads-arrived (ctx)
   "Show the threads of CTX in its thread list and diff buffers."
@@ -620,7 +620,7 @@ fetches the threads again.
 
 
 ;;;###autoload
-(defun tether-threads (&optional pick)
+(defun tether-thread-list (&optional pick)
   "List the review threads of the pull request, by file.
 At a line with a thread, go to that thread.  With prefix argument
 PICK, choose the pull request."
@@ -727,7 +727,7 @@ current line."
 (declare-function tether--refresh-buffer "tether")
 
 ;;;###autoload
-(defun tether-toggle-resolved ()
+(defun tether-thread-toggle-resolved ()
   "Show or hide resolved review threads in file and diff buffers."
   (interactive)
   (setq tether-show-resolved (not tether-show-resolved))
@@ -739,7 +739,7 @@ current line."
   (message "Tether: resolved threads %s" (if tether-show-resolved "shown" "hidden")))
 
 ;;;###autoload
-(defun tether-resolve ()
+(defun tether-thread-resolve ()
   "Resolve the review thread at point, or reopen it if it is resolved."
   (interactive)
   (let* ((ctx (tether--threads-ctx))
@@ -768,7 +768,7 @@ current line."
     (car comments)))
 
 ;;;###autoload
-(defun tether-delete-comment ()
+(defun tether-comment-delete ()
   "Delete a comment of the review thread at point, after confirmation.
 With several comments, choose which.  The forge only lets you delete
 your own."

@@ -13,7 +13,7 @@
 ;; A draft review: comments made after `tether-review-start' are drafts
 ;; only you see, published together by `tether-review-submit' as a
 ;; comment, an approval or a request for changes.  `tether-review-discard'
-;; deletes them, `tether-approve' approves without a review.
+;; deletes them, `tether-review-approve' approves without a review.
 ;;
 ;; The drafts live on the forge: a pending review on GitHub (also the
 ;; one started on github.com), draft notes on GitLab (also those made in
@@ -143,7 +143,7 @@ Called by the comment editor when sending a review target."
       (message "Tether: review discarded"))))
 
 ;;;###autoload
-(defun tether-approve ()
+(defun tether-review-approve ()
   "Approve the pull request.
 During a draft review, offer to submit it with the approval."
   (interactive)
