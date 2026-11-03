@@ -27,6 +27,7 @@
 (require 'subr-x)
 (require 'magit)
 (require 'magit-section)
+(require 'transient)
 (require 'diff-mode)
 (require 'tether-context)
 (require 'tether-lines)
@@ -473,11 +474,72 @@ In a diff or commit buffer showing threads, to the previous one there."
 
 ;;;; The thread list
 
+(defface tether-threads-heading
+  '((t :inherit magit-section-heading))
+  "Headings of the groups of the thread list: Your turn, Resolved..."
+  :group 'tether)
+
+(defface tether-threads-file
+  '((t :inherit magit-diff-file-heading))
+  "File and line of a thread in the thread list."
+  :group 'tether)
+
+(defface tether-threads-code
+  '((t :inherit magit-diff-context-highlight :extend t))
+  "Background of the code shown under a thread.
+The code keeps the colors of its major mode on top of it."
+  :group 'tether)
+
+(defface tether-threads-line-number
+  '((t :inherit shadow))
+  "Line numbers of the code shown under a thread."
+  :group 'tether)
+
+(defface tether-threads-author
+  '((t :inherit magit-log-author))
+  "Author of a comment of a review thread."
+  :group 'tether)
+
+(defface tether-threads-date
+  '((t :inherit magit-log-date))
+  "Date of a comment of a review thread."
+  :group 'tether)
+
+(defface tether-threads-comment
+  '((t :inherit font-lock-doc-face))
+  "Text of a comment of a review thread."
+  :group 'tether)
+
 (defvar-local tether-threads--ctx nil
   "Review context of the thread list.")
 
 (defvar-local tether-threads--positions nil
   "Where each thread is in the list, as (ID . POSITION).")
+
+(defvar-local tether-threads--files nil
+  "Contents of the files shown in the list, by (REV . PATH).
+Each value is a vector of lines, read once per rendering.")
+
+(declare-function tether-comment-edit "tether-comment")
+
+(transient-define-prefix tether-threads-menu ()
+  "Act on the thread at point in the thread list."
+  [["Thread"
+    ("RET" "visit its line" tether-threads-visit)
+    ("SPC" "open it, with a reply area" tether-thread-show)
+    ("r" "reply" tether-thread-reply)
+    ("R" "resolve / reopen" tether-thread-resolve)
+    ("e" "edit one of your comments" tether-comment-edit)
+    ("k" "delete one of your comments" tether-comment-delete)]
+   ["Show"
+    ("d" "in the PR diff" tether-threads-diff)
+    ("b" "in the browser" tether-threads-browse)
+    ("t" "the forge topic" tether-visit-topic)
+    ("m" "magit-status" tether-visit-status)]
+   ["List"
+    ("g" "refresh" tether-threads-refresh)
+    ("n" "next thread" magit-section-forward :transient t)
+    ("p" "previous thread" magit-section-backward :transient t)]])
 
 (defvar-keymap tether-threads-mode-map
   :parent magit-section-mode-map
@@ -487,102 +549,280 @@ In a diff or commit buffer showing threads, to the previous one there."
   "SPC" #'tether-thread-show
   "r" #'tether-thread-reply
   "R" #'tether-thread-resolve
+  "e" #'tether-comment-edit
   "k" #'tether-comment-delete
   "t" #'tether-visit-topic
   "m" #'tether-visit-status
-  "g" #'tether-threads-refresh)
+  "g" #'tether-threads-refresh
+  "?" #'tether-threads-menu)
 
 (define-derived-mode tether-threads-mode magit-section-mode "Tether-Threads"
-  "The review threads of a pull request, by file.
-On a thread, `tether-threads-visit' visits its line,
-`tether-threads-diff' shows it in the PR diff and
-`tether-threads-browse' in the browser; `tether-threads-refresh'
-fetches the threads again.
+  "The review threads of a pull request, by what they wait for.
+\"Your turn\" lists the open threads whose last comment is not yours,
+\"Waiting for others\" those where you spoke last; resolved and
+outdated threads come after.  Under each thread, the code it is on
+and its comments.  \\<tether-threads-mode-map>\\[tether-threads-menu] \
+shows every action.
 
-\\{tether-threads-mode-map}")
+\\{tether-threads-mode-map}"
+  (setq header-line-format
+        (substitute-command-keys
+         "\\<tether-threads-mode-map>  \\[tether-threads-visit] visit  \
+\\[tether-thread-show] open  \\[tether-thread-reply] reply  \
+\\[tether-thread-resolve] resolve  \\[tether-threads-refresh] refresh  \
+\\[tether-threads-menu] all keys")))
+
+;;;;; Text
+
+(defun tether--format-date (iso)
+  "Return the date ISO, an ISO 8601 string, as \"Nov 3 11:34\", or nil."
+  (when-let* ((time (and iso (condition-case nil (parse-iso8601-time-string iso)
+                               (error nil)))))
+    (format-time-string (if (equal (format-time-string "%Y" time)
+                                   (format-time-string "%Y"))
+                            "%b %-d %H:%M"
+                          "%b %-d %Y")
+                        time)))
+
+(defun tether--format-ago (iso)
+  "Return how long ago ISO, an ISO 8601 string, was: \"2h ago\", or nil."
+  (when-let* ((time (and iso (condition-case nil (parse-iso8601-time-string iso)
+                               (error nil)))))
+    (let ((seconds (float-time (time-subtract nil time))))
+      (cond ((< seconds 60) "just now")
+            ((< seconds 3600) (format "%dm ago" (/ seconds 60)))
+            ((< seconds 86400) (format "%dh ago" (/ seconds 3600)))
+            ((< seconds (* 30 86400)) (format "%dd ago" (/ seconds 86400)))
+            (t (tether--format-date iso))))))
+
+(defun tether--fontify-as (text file)
+  "Return TEXT colored by the major mode of a file named FILE.
+The mode's hooks do not run: no language server starts for it.
+TEXT comes back uncolored when the mode fails."
+  (with-temp-buffer
+    (insert text)
+    (condition-case nil
+        (progn
+          (let ((buffer-file-name file))
+            (delay-mode-hooks (set-auto-mode)))
+          (font-lock-ensure)
+          ;; `face' is font-lock's own, which the list buffer would
+          ;; recompute; `font-lock-face' stays.
+          (let ((pos (point-min)))
+            (while (< pos (point-max))
+              (let ((next (next-single-property-change pos 'face nil (point-max))))
+                (when-let* ((face (get-text-property pos 'face)))
+                  (put-text-property pos next 'font-lock-face face))
+                (setq pos next)))))
+      (error nil))
+    (buffer-substring (point-min) (point-max))))
+
+;;;;; One thread
 
 (defun tether-threads--insert-comments (thread)
-  "Insert the comments of THREAD, indented."
-  (dolist (comment (tether-thread-comments thread))
-    (insert (propertize (format "    %s, %s\n" (plist-get comment :author)
-                                (or (plist-get comment :created) ""))
-                        'font-lock-face 'bold))
-    (dolist (line (tether--comment-lines comment))
-      (insert "      " line "\n")))
+  "Insert the comments of THREAD, indented: author, date and text.
+For an outdated thread, also the hunk it was written on."
+  (let ((bar (propertize "  ▎ " 'font-lock-face 'tether-thread)))
+    (dolist (comment (tether-thread-comments thread))
+      (insert bar
+              (propertize (or (plist-get comment :author) "?")
+                          'font-lock-face 'tether-threads-author)
+              (if-let* ((date (tether--format-date (plist-get comment :created))))
+                  (concat "  " (propertize date 'font-lock-face 'tether-threads-date))
+                "")
+              "\n")
+      (dolist (line (tether--comment-lines comment))
+        (insert bar "  "
+                (propertize line 'font-lock-face 'tether-threads-comment)
+                "\n"))))
   (when-let* ((hunk (and (tether-thread-outdated thread)
                          (tether-thread-diff-hunk thread))))
-    (insert (propertize "    The hunk it was written on:\n"
-                        'font-lock-face 'bold))
+    (insert (propertize "    The code when it was written:\n"
+                        'font-lock-face 'tether-threads-line-number))
     (dolist (line (split-string hunk "\n"))
-      (insert "      "
+      (insert "    "
               (propertize line 'font-lock-face
                           (pcase (string-to-char line)
                             (?+ 'diff-added) (?- 'diff-removed)
                             (_ 'diff-context)))
               "\n"))))
 
-(defun tether-threads--insert-thread (thread)
-  "Insert THREAD as a collapsed section."
+(defun tether-threads--file-lines (rev path)
+  "Return the lines of PATH at REV as a vector, read once per rendering."
+  (let ((key (cons rev path)))
+    (or (cdr (assoc key tether-threads--files))
+        (let ((lines (vconcat
+                      (with-temp-buffer
+                        (magit-git-insert "show" (format "%s:%s" rev path))
+                        (split-string (buffer-string) "\n")))))
+          (push (cons key lines) tether-threads--files)
+          lines))))
+
+(defun tether-threads--insert-code (ctx thread)
+  "Insert the code THREAD of CTX is on, a line around it, in its colors."
+  (when-let* ((line (tether-thread-line thread))
+              (rev (if (eq (tether-thread-side thread) 'left)
+                       (tether-context-base-sha ctx)
+                     (tether-context-head-sha ctx)))
+              (lines (tether-threads--file-lines rev (tether-thread-path thread)))
+              (first (or (tether-thread-start-line thread) line))
+              (beg (max 1 (1- first)))
+              (end (min (1- (length lines)) (1+ line)))
+              ((<= beg end)))
+    (let* ((text (mapconcat (lambda (n) (aref lines (1- n)))
+                            (number-sequence beg end) "\n"))
+           (colored (split-string (tether--fontify-as text (tether-thread-path thread))
+                                  "\n"))
+           (width (length (number-to-string end))))
+      (cl-loop for n from beg to end
+               for code in colored
+               do (let ((here (<= first n line))
+                        (start (point)))
+                    (insert "    "
+                            (propertize (format (format "%%%dd" width) n) 'font-lock-face
+                                        (if here 'tether-thread 'tether-threads-line-number))
+                            (if here (propertize " ▶ " 'font-lock-face 'tether-thread) "   ")
+                            code "\n")
+                    (tether-threads--add-face start (point) 'tether-threads-code))))))
+
+(defun tether-threads--add-face (beg end face)
+  "Add FACE below the `font-lock-face' of the text from BEG to END."
+  (let ((pos beg))
+    (while (< pos end)
+      (let ((next (next-single-property-change pos 'font-lock-face nil end))
+            (faces (ensure-list (get-text-property pos 'font-lock-face))))
+        (put-text-property pos next 'font-lock-face (append faces (list face)))
+        (setq pos next)))))
+
+(defun tether-threads--heading (thread)
+  "Return the heading of THREAD: its place, who spoke last, and when."
+  (let* ((comments (tether-thread-comments thread))
+         (last (car (last comments)))
+         (count (length comments)))
+    (concat
+     (propertize (format "%s:%s" (tether-thread-path thread)
+                         (or (tether-thread-line thread)
+                             (tether-thread-original-line thread) "?"))
+                 'font-lock-face 'tether-threads-file)
+     (if (eq (tether-thread-side thread) 'left)
+         (propertize " (removed line)" 'font-lock-face 'tether-threads-line-number)
+       "")
+     "  "
+     (propertize (format "%s%s%s"
+                         (or (plist-get last :author) "?")
+                         (if-let* ((ago (tether--format-ago (plist-get last :created))))
+                             (concat " · " ago)
+                           "")
+                         (if (> count 1) (format " · %d comments" count) ""))
+                 'font-lock-face 'tether-threads-line-number))))
+
+(defun tether-threads--insert-thread (ctx thread hide)
+  "Insert THREAD of CTX as a section, hidden if HIDE."
   (push (cons (tether-thread-id thread) (point)) tether-threads--positions)
-  (magit-insert-section (tether-thread thread t)
-    (magit-insert-heading
-      (format "  %-6s %s%s%s"
-              (if (tether-thread-line thread)
-                  (format "%sL%d" (if (eq (tether-thread-side thread) 'left) "-" "")
-                          (tether-thread-line thread))
-                (format "@%s L%s" (substring (or (tether-thread-original-sha thread)
-                                                 "unknown")
-                                             0 7)
-                        (or (tether-thread-original-line thread) "?")))
-              (truncate-string-to-width (tether--thread-first-line thread) 70 nil nil "…")
-              (let ((replies (1- (length (tether-thread-comments thread)))))
-                (if (> replies 0) (format "  +%d" replies) ""))
-              (if (tether-thread-resolved thread)
-                  (propertize "  resolved" 'font-lock-face 'shadow)
-                "")))
-    (tether-threads--insert-comments thread)))
+  (magit-insert-section (tether-thread thread hide)
+    (magit-insert-heading (tether-threads--heading thread))
+    (tether-threads--insert-code ctx thread)
+    (tether-threads--insert-comments thread)
+    (insert "\n")))
+
+;;;;; The list
+
+(defun tether-threads--order (threads)
+  "Return THREADS sorted by file, then line."
+  (sort (copy-sequence threads)
+        (lambda (a b)
+          (let ((pa (tether-thread-path a)) (pb (tether-thread-path b)))
+            (if (equal pa pb)
+                (< (or (tether-thread-line a) (tether-thread-original-line a) 0)
+                   (or (tether-thread-line b) (tether-thread-original-line b) 0))
+              (string< pa pb))))))
+
+(defun tether-threads--groups (ctx)
+  "Return the groups of CTX's threads, as (TYPE HEADING HIDE THREADS).
+Without the user's login, the open threads make one group."
+  (let* ((threads (tether-context-threads ctx))
+         (me (condition-case nil (tether--username (tether-context-repo ctx))
+               (error nil)))
+         (open (seq-remove (lambda (th) (or (tether-thread-resolved th)
+                                            (tether-thread-outdated th)))
+                           threads))
+         (mine (lambda (th) (equal (plist-get (car (last (tether-thread-comments th)))
+                                              :author)
+                                   me))))
+    (append
+     (if me
+         (list (list 'tether-threads-yours "Your turn" nil (seq-remove mine open))
+               (list 'tether-threads-waiting "Waiting for others" nil
+                     (seq-filter mine open)))
+       (list (list 'tether-threads-open "Open" nil open)))
+     (list (list 'tether-threads-resolved "Resolved" t
+                 (seq-filter #'tether-thread-resolved threads))
+           (list 'tether-threads-outdated "Outdated" t
+                 (seq-filter (lambda (th) (and (tether-thread-outdated th)
+                                               (not (tether-thread-resolved th))))
+                             threads))))))
+
+(defun tether-threads--visibility ()
+  "Return which groups and threads of the list are hidden, to keep them so.
+An alist of (TYPE-OR-ID . HIDDEN)."
+  (let (result)
+    (when magit-root-section
+      (dolist (group (oref magit-root-section children))
+        (push (cons (oref group type) (oref group hidden)) result)
+        (dolist (thread (oref group children))
+          (when (magit-section-match 'tether-thread thread)
+            (push (cons (tether-thread-id (oref thread value)) (oref thread hidden))
+                  result)))))
+    result))
 
 (defun tether-threads--render ()
   "Insert the thread list of `tether-threads--ctx'."
   (let* ((ctx tether-threads--ctx)
          (threads (tether-context-threads ctx))
          (state (tether-context-threads-state ctx))
-         (outdated (seq-filter #'tether-thread-outdated threads))
-         (current (seq-remove #'tether-thread-outdated threads))
+         (visibility (tether-threads--visibility))
          (point (point))
          (inhibit-read-only t))
     (erase-buffer)
-    (setq tether-threads--positions nil)
+    (setq tether-threads--positions nil
+          tether-threads--files nil)
     (magit-insert-section (tether-threads)
       (magit-insert-heading
-        (format "%s %s: %d open, %d resolved, %d outdated"
-                (tether--label (tether-context-repo ctx)
-                               (oref (tether-context-pullreq ctx) number))
-                (oref (tether-context-pullreq ctx) title)
-                (length (tether--open-threads ctx))
-                (seq-count #'tether-thread-resolved threads)
-                (length outdated)))
+        (propertize (format "%s %s"
+                            (tether--label (tether-context-repo ctx)
+                                           (oref (tether-context-pullreq ctx) number))
+                            (oref (tether-context-pullreq ctx) title))
+                    'font-lock-face 'tether-threads-heading))
+      (insert (propertize
+               (format "%d open · %d resolved · %d outdated\n"
+                       (length (tether--open-threads ctx))
+                       (seq-count #'tether-thread-resolved threads)
+                       (seq-count (lambda (th) (and (tether-thread-outdated th)
+                                                    (not (tether-thread-resolved th))))
+                                  threads))
+               'font-lock-face 'tether-threads-line-number))
       (pcase state
-        ('loading (insert "\n  Fetching the review threads...\n"))
-        ('error (insert "\n  The review threads could not be fetched; g to retry.\n"))
-        (_ (when (null threads) (insert "\n  No review thread.\n"))))
-      (dolist (group (seq-group-by #'tether-thread-path
-                                   (sort current
-                                         (lambda (a b)
-                                           (< (or (tether-thread-line a) 0)
-                                              (or (tether-thread-line b) 0))))))
-        (insert "\n")
-        (magit-insert-section (tether-threads-file (car group))
-          (magit-insert-heading (format "%s (%d)" (car group) (length (cdr group))))
-          (mapc #'tether-threads--insert-thread (cdr group))))
-      (when outdated
-        (insert "\n")
-        (magit-insert-section (tether-threads-outdated)
-          (magit-insert-heading (format "Outdated (%d)" (length outdated)))
-          (dolist (thread outdated)
-            (magit-insert-section (tether-threads-file (tether-thread-path thread))
-              (magit-insert-heading (format " %s" (tether-thread-path thread)))
-              (tether-threads--insert-thread thread))))))
+        ('loading (insert "\nFetching the review threads...\n"))
+        ('error (insert "\nThe review threads could not be fetched; g to retry.\n"))
+        (_ (when (null threads) (insert "\nNo review thread.\n"))))
+      (pcase-dolist (`(,type ,heading ,hide ,group) (tether-threads--groups ctx))
+        (when group
+          ;; One blank line between groups: a thread ends with one.
+          (unless (looking-back "\n\n" (- (point) 2))
+            (insert "\n"))
+          (magit-insert-section ((eval type) nil
+                                 (alist-get type visibility hide))
+            (magit-insert-heading
+              (propertize (format "%s (%d)" heading (length group))
+                          'font-lock-face 'tether-threads-heading))
+            (dolist (thread (tether-threads--order group))
+              (tether-threads--insert-thread
+               ctx thread
+               (alist-get (tether-thread-id thread) visibility
+                          ;; Threads waiting for others start folded.
+                          (not (memq type '(tether-threads-yours
+                                            tether-threads-open)))
+                          nil #'equal)))))))
     (goto-char (min point (point-max)))))
 
 (defun tether--threads-buffer (ctx)
@@ -621,7 +861,7 @@ fetches the threads again.
 
 ;;;###autoload
 (defun tether-thread-list (&optional pick)
-  "List the review threads of the pull request, by file.
+  "List the review threads of the pull request, by what they wait for.
 At a line with a thread, go to that thread.  With prefix argument
 PICK, choose the pull request."
   (interactive "P")
@@ -645,7 +885,11 @@ PICK, choose the pull request."
                 (position (alist-get (tether-thread-id thread)
                                      tether-threads--positions nil nil #'equal)))
       (goto-char position)
-      (magit-section-show (magit-current-section))))
+      ;; The thread, and its group: Resolved and Outdated start folded.
+      (let ((section (magit-current-section)))
+        (while section
+          (magit-section-show section)
+          (setq section (oref section parent))))))
 
 (defun tether-threads--at-point ()
   "Return the thread at point in the thread list, or nil."
@@ -661,9 +905,7 @@ PICK, choose the pull request."
                                 (and (eq (tether-thread-side thread) 'right)
                                      (tether-thread-line thread)))
           (user-error "Tether: this thread is outdated; its line is gone"))
-      (if-let* ((path (magit-section-value-if 'tether-threads-file)))
-          (tether--visit-path ctx path nil)
-        (user-error "Tether: no thread at point")))))
+      (user-error "Tether: no thread at point"))))
 
 (defun tether-threads-diff ()
   "Show the thread at point in the PR diff."

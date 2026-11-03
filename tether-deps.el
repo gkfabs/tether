@@ -69,6 +69,8 @@
     magit-rev-verify
     magit-insert-heading
     magit-insert-section
+    magit-section-backward
+    magit-section-forward
     magit-section-match
     magit-section-mode
     magit-section-show
@@ -102,6 +104,11 @@
     (magit-hunk-section from-range to-range content end parent))
   "Classes tether dispatches on, each followed by the slots it reads.")
 
+(defconst tether--external-faces
+  '(magit-section-heading magit-diff-file-heading magit-diff-context-highlight
+    magit-log-author magit-log-date)
+  "Faces tether's own faces inherit from magit.")
+
 (defconst tether--external-other
   '(forge-topic-mode magit-mode magit-diff-mode magit-status-mode
     magit-revision-mode ghub-error
@@ -124,6 +131,7 @@
   (append tether--external-functions
           tether--external-variables
           (mapcar #'car tether--external-classes)
+          tether--external-faces
           tether--external-other))
 
 (defun tether--keyword-args (function)
@@ -170,6 +178,9 @@ tether uses is present."
           (dolist (key keys)
             (unless (memq key accepted)
               (push (format "`%s' no longer accepts %s" fn key) problems))))))
+    (dolist (face tether--external-faces)
+      (unless (facep face)
+        (push (format "face `%s' is not defined" face) problems)))
     (pcase-dolist (`(,generic ,specializer) tether--external-methods)
       (unless (tether--method-exists-p generic specializer)
         (push (format "`%s' has no method for %S" generic specializer)

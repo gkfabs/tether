@@ -276,35 +276,124 @@ As when `tether-pullreq-show' runs from magit-status first."
       (should (= (line-number-at-pos) 1))
       (should-error (tether-thread-previous) :type 'user-error))))
 
+(defun tether-threads-test--text ()
+  "Return the text of the current buffer, without its properties."
+  (buffer-substring-no-properties (point-min) (point-max)))
+
+(defun tether-threads-test--face-at (text)
+  "Return the `font-lock-face' at the start of TEXT in the current buffer."
+  (save-excursion
+    (goto-char (point-min))
+    (search-forward text)
+    (ensure-list (get-text-property (match-beginning 0) 'font-lock-face))))
+
 (ert-deftest tether-threads-test-list ()
-  "The list groups by file, keeps outdated threads apart, and visits."
+  "The list groups threads by what they wait for, in file order, and visits."
   (tether-threads-test-with
     (let ((ctx (tether-threads-test--context
                 repo base head
-                (list (tether-threads-test--thread "a.el" 2)
-                      (tether-threads-test--thread "a.el" 3 :resolved t)
+                (list (tether-threads-test--thread "b.el" 1 :body "New file?")
+                      (tether-threads-test--thread "a.el" 2)
+                      (tether-threads-test--thread "a.el" 3 :author "fabien"
+                                                   :body "Mine")
+                      (tether-threads-test--thread "a.el" 1 :resolved t)
                       (let ((thread (tether-threads-test--thread
                                      "a.el" nil :outdated t :body "Old")))
-                        (setf (tether-thread-diff-hunk thread) "@@ -1 +1 @@\n-x\n+y")
+                        (setf (tether-thread-original-line thread) 9
+                              (tether-thread-diff-hunk thread) "@@ -1 +1 @@\n-x\n+y")
                         thread)))))
-      (set-buffer (with-current-buffer (find-file-noselect (expand-file-name "a.el"))
-                    (goto-char (point-min))
-                    (forward-line 1)
-                    (tether-thread-list)))
+      (cl-letf (((symbol-function 'tether--username) (lambda (_) "fabien")))
+        (set-buffer (with-current-buffer (find-file-noselect (expand-file-name "a.el"))
+                      (goto-char (point-min))
+                      (forward-line 1)
+                      (tether-thread-list))))
       (should (derived-mode-p 'tether-threads-mode))
       (should (equal (buffer-name) "*tether-threads #7*"))
-      (let ((text (buffer-substring-no-properties (point-min) (point-max))))
-        (should (string-match-p "#7 Fix parsing: 1 open, 1 resolved, 1 outdated" text))
-        (should (string-match-p "^a.el (2)$" text))
-        (should (string-match-p "^Outdated (1)$" text)))
-      ;; Point is on the thread of line 2, shown.
+      (let ((text (tether-threads-test--text)))
+        (should-not (string-search "\n\n\n" text))
+        (should (string-match-p "\\`#7 Fix parsing\n3 open · 1 resolved · 1 outdated\n"
+                                text))
+        ;; By what they wait for, then in file and line order.
+        (should (string-match-p
+                 (concat "\nYour turn (2)\n"
+                         "a.el:2  alice\n\\(.\\|\n\\)*"
+                         "\nb.el:1  alice\n\\(.\\|\n\\)*"
+                         "\n\nWaiting for others (1)\n"
+                         "a.el:3  fabien\n\\(.\\|\n\\)*"
+                         "\n\nResolved (1)\n\\(.\\|\n\\)*"
+                         "\n\nOutdated (1)\n")
+                 text))
+        ;; The code of the thread, its line marked, then the comment.
+        (should (string-match-p (concat "    1   one\n"
+                                        "    2 ▶ TWO\n"
+                                        "    3   three\n"
+                                        "  ▎ alice\n"
+                                        "  ▎   Off by one\\?\n")
+                                text))
+        ;; An outdated thread keeps the code it was written on.
+        (should (string-match-p "The code when it was written:\n    @@ -1 \\+1 @@" text)))
+      ;; Each part has its own face.
+      (should (memq 'tether-threads-file (tether-threads-test--face-at "a.el:2")))
+      (should (memq 'tether-threads-code (tether-threads-test--face-at "2 ▶ TWO")))
+      (should (memq 'tether-threads-comment (tether-threads-test--face-at "Off by one")))
+      (should (memq 'tether-threads-heading (tether-threads-test--face-at "Your turn")))
+      ;; Your turn is open; waiting, resolved and outdated start folded.
+      (cl-flet ((hidden (text)
+                  (save-excursion
+                    (goto-char (point-min))
+                    (search-forward text)
+                    (oref (magit-current-section) hidden))))
+        (should-not (hidden "a.el:2"))
+        (should (hidden "a.el:3"))
+        (should (hidden "Resolved (1)")))
+      ;; Point is on the thread of the line the list was opened from.
       (should (equal (tether-thread-line (tether-threads--at-point)) 2))
-      (should (string-match-p "Off by one"
-                              (buffer-substring-no-properties (point) (point-max))))
       (tether-threads-visit)
       (should (equal (file-name-nondirectory buffer-file-name) "a.el"))
       (should (= (line-number-at-pos) 2))
       (ignore ctx))))
+
+(ert-deftest tether-threads-test-list-without-login ()
+  "Without the user's login, the open threads make one group."
+  (tether-threads-test-with
+    (tether-threads-test--context repo base head
+                                  (list (tether-threads-test--thread "a.el" 2)))
+    (cl-letf (((symbol-function 'tether--username) (lambda (_) (error "Offline"))))
+      (with-current-buffer (tether-thread-list)
+        (should (string-match-p "^Open (1)$" (tether-threads-test--text)))
+        (should-not (string-match-p "Your turn" (tether-threads-test--text)))))))
+
+(ert-deftest tether-threads-test-list-keeps-folding ()
+  "Threads arriving again keep what was unfolded and folded."
+  (tether-threads-test-with
+    (let ((ctx (tether-threads-test--context
+                repo base head
+                (list (tether-threads-test--thread "a.el" 2)
+                      (tether-threads-test--thread "a.el" 3 :resolved t)))))
+      (cl-letf (((symbol-function 'tether--username) (lambda (_) "fabien")))
+        (with-current-buffer (tether-thread-list)
+          (goto-char (point-min))
+          (search-forward "Resolved (1)")
+          (magit-section-show (magit-current-section))
+          (run-hook-with-args 'tether-threads-functions ctx)
+          (goto-char (point-min))
+          (search-forward "Resolved (1)")
+          (should-not (oref (magit-current-section) hidden)))))))
+
+(ert-deftest tether-threads-test-dates ()
+  "Dates read as \"Nov 3 11:34\", or how long ago."
+  (let ((now (current-time)))
+    (cl-letf (((symbol-function 'current-time) (lambda () now)))
+      (should (equal (tether--format-ago (format-time-string "%FT%TZ"
+                                                             (time-subtract now 7200) t))
+                     "2h ago"))
+      (should (equal (tether--format-ago (format-time-string "%FT%TZ"
+                                                             (time-subtract now 30) t))
+                     "just now"))))
+  (should (string-match-p "\\`[A-Z][a-z][a-z] [0-9]+ [0-9][0-9]:[0-9][0-9]\\'"
+                          (tether--format-date (format-time-string "%Y-11-03T11:34:00Z"))))
+  (should-not (tether--format-date nil))
+  (should-not (tether--format-date "not a date")))
 
 (ert-deftest tether-threads-test-crlf-bodies ()
   "Comments written with CRLF line ends show without the CR."
@@ -314,7 +403,7 @@ As when `tether-pullreq-show' runs from magit-status first."
     (with-temp-buffer
       (tether-threads--insert-comments thread)
       (should-not (string-search "\r" (buffer-string)))
-      (should (string-search "      second\n" (buffer-string))))
+      (should (string-search "  ▎   second\n" (buffer-string))))
     (should (equal (tether--comment-start (car (tether-thread-comments thread)))
                    "first"))))
 
