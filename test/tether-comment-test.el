@@ -218,5 +218,65 @@ Sending is followed by fetching the threads again."
     (should (equal (alist-get 'subject_type (tether-comment-test--payload))
                    "file"))))
 
+(defun tether-comment-test--new-file-hunk (count)
+  "Return the hunk of a new file of COUNT lines, \"line 1\"..."
+  (concat (format "@@ -0,0 +1,%d @@\n" count)
+          (mapconcat (lambda (n) (format "+line %d" n)) (number-sequence 1 count) "\n")
+          "\n"))
+
+(ert-deftest tether-comment-test-hunk-excerpt ()
+  "A big hunk is cut to the lines near the comment, with ⋮ for the rest."
+  (let ((excerpt (split-string (tether-comment--hunk-excerpt
+                                (tether-comment-test--new-file-hunk 3223) 905 906 'right)
+                               "\n")))
+    (should (equal (car excerpt) "@@ -0,0 +1,3223 @@"))
+    (should (equal (nth 1 excerpt) "⋮"))
+    (should (equal (nth 2 excerpt) "+line 895"))
+    (should (equal (car (last excerpt 2)) "+line 916"))
+    (should (equal (car (last excerpt)) "⋮"))
+    (should (= (length excerpt) (+ 1 1 22 1))))
+  ;; At the start of the hunk: nothing cut before.
+  (should (equal (nth 1 (split-string (tether-comment--hunk-excerpt
+                                       (tether-comment-test--new-file-hunk 100) 1 1 'right)
+                                      "\n"))
+                 "+line 1"))
+  ;; A small hunk stays whole.
+  (let ((hunk "@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n"))
+    (should (equal (tether-comment--hunk-excerpt hunk 2 2 'right) hunk))))
+
+(ert-deftest tether-comment-test-hunk-excerpt-sides ()
+  "Line numbers follow the side: the base for removed lines, the head else."
+  (let* ((hunk (concat "@@ -1,60 +1,30 @@\n"
+                       (mapconcat (lambda (n) (format "-old %d" n)) (number-sequence 1 60) "\n")
+                       "\n"
+                       (mapconcat (lambda (n) (format "+new %d" n)) (number-sequence 1 30) "\n")))
+         (left (tether-comment--hunk-excerpt hunk 50 50 'left))
+         (right (tether-comment--hunk-excerpt hunk 5 5 'right)))
+    (should (string-search "-old 50\n" left))
+    (should-not (string-search "-old 30\n" left))
+    (should (string-search "+new 5\n" right))
+    (should-not (string-search "+new 20\n" right))))
+
+(ert-deftest tether-comment-test-lines-excerpt ()
+  "Lines outside the diff: a long selection keeps its first and last lines."
+  (let ((text (mapconcat #'number-to-string (number-sequence 1 100) "\n")))
+    (should (equal (split-string (tether-comment--lines-excerpt text) "\n")
+                   (append (mapcar #'number-to-string (number-sequence 1 10))
+                           '("⋮")
+                           (mapcar #'number-to-string (number-sequence 91 100))))))
+  (should (equal (tether-comment--lines-excerpt "a\nb") "a\nb")))
+
+(ert-deftest tether-comment-test-big-new-file ()
+  "Commenting on a big new file keeps the editor small, so it stays fast."
+  (cl-letf (((symbol-function 'tether-hunk-text)
+             (lambda (&rest _) (tether-comment-test--new-file-hunk 3223))))
+    (with-temp-buffer
+      (tether-comment-mode)
+      (let ((line (make-tether-line :kind :added :new 905 :hunk 0)))
+        (tether-comment--insert-hunk nil (list :path "doc.md" :start line :end line
+                                               :side 'right)))
+      (should (< (buffer-size) 1000))
+      (should (string-search "+line 905\n" (buffer-string))))))
+
 (provide 'tether-comment-test)
 ;;; tether-comment-test.el ends here

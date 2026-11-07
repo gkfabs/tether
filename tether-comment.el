@@ -306,16 +306,66 @@ The reply is typed below it."
   (tether-comment--insert-discussion thread)
   (force-mode-line-update))
 
+(defconst tether-comment--context 10
+  "Lines of the hunk the editor shows before and after the commented ones.")
+
+(defun tether-comment--hunk-excerpt (hunk start end side)
+  "Return HUNK cut to its lines near lines START to END on SIDE.
+HUNK is the text of a hunk, header first; SIDE is `left' for the base
+side, `right' for the head.  The lines more than
+`tether-comment--context' away are replaced by a \"⋮\" line, so that
+a big hunk, as of a new file, does not slow the editor down."
+  (let* ((lines (split-string (string-trim-right hunk) "\n"))
+         (header (car lines))
+         (old (and (string-match "\\`@@ -\\([0-9]+\\)\\(?:,[0-9]+\\)? \\+\\([0-9]+\\)"
+                                 header)
+                   (string-to-number (match-string 1 header))))
+         (new (and old (string-to-number (match-string 2 header))))
+         (low (- start tether-comment--context))
+         (high (+ end tether-comment--context))
+         kept skipped)
+    (if (or (null old)
+            (<= (length lines) (+ end (- start) 2 (* 2 tether-comment--context))))
+        hunk
+      (dolist (line (cdr lines))
+        (let ((kind (string-to-char line)))
+          (if (<= low (if (eq side 'left) old new) high)
+              (progn (when skipped
+                       (push "⋮" kept)
+                       (setq skipped nil))
+                     (push line kept))
+            (setq skipped t))
+          (unless (memq kind '(?+ ?\\)) (cl-incf old))
+          (unless (memq kind '(?- ?\\)) (cl-incf new))))
+      (when skipped
+        (push "⋮" kept))
+      (string-join (cons header (nreverse kept)) "\n"))))
+
+(defun tether-comment--lines-excerpt (text)
+  "Return TEXT, lines, cut to its first and last ones when long."
+  (let ((lines (split-string (string-trim-right text) "\n"))
+        (keep tether-comment--context))
+    (if (<= (length lines) (* 2 keep))
+        text
+      (string-join (append (seq-take lines keep) '("⋮") (last lines keep)) "\n"))))
+
 (defun tether-comment--insert-hunk (ctx target)
   "Insert the hunk of TARGET in CTX's diff, read-only, below the text.
-For lines outside the hunks, insert the lines themselves."
+Only its lines near the commented ones.  For lines outside the hunks,
+insert the lines themselves."
   (when-let* ((end (plist-get target :end))
+              (start (or (plist-get target :start) end))
               (path (plist-get target :path))
+              (side (if (eq (plist-get target :side) 'left) 'left 'right))
               (text (if (tether-line-hunk end)
-                        (tether-hunk-text ctx path (tether-line-hunk end))
-                      (tether-head-lines ctx path
-                                         (tether-line-new (plist-get target :start))
-                                         (tether-line-new end)))))
+                        (tether-comment--hunk-excerpt
+                         (tether-hunk-text ctx path (tether-line-hunk end))
+                         (if (eq side 'left) (tether-line-old start) (tether-line-new start))
+                         (if (eq side 'left) (tether-line-old end) (tether-line-new end))
+                         side)
+                      (tether-comment--lines-excerpt
+                       (tether-head-lines ctx path (tether-line-new start)
+                                          (tether-line-new end))))))
     (save-excursion
       (goto-char (point-max))
       (let ((start (point)))
