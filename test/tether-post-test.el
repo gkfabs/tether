@@ -92,6 +92,23 @@ GitLab's diff parser computes it."
                    `((line_code . ,(concat tether-post-test--mod-sha1 "_21_21"))
                      (old_line . 21) (new_line . 21))))))
 
+(ert-deftest tether-post-test-gitlab-too-large ()
+  "GitLab's too_large files, from one paginated request; none when it fails."
+  (let* ((repo (tether-test-gitlab-repo))
+         (ctx (tether-post-test--ctx repo)))
+    (tether-test-with-handler
+        (lambda (request)
+          (should (equal (plist-get request :resource)
+                         "/projects/g%2Fsub%2Fp/merge_requests/7/diffs"))
+          '(:value (((new_path . "small.el") (too_large . :json-false))
+                    ((new_path . "docs/big.md") (too_large . t)))))
+      (should (equal (tether--too-large-files repo ctx) '("docs/big.md"))))
+    (tether-test-with-handler (lambda (_) '(:error (error "Not found") nil))
+      (should-not (tether--too-large-files repo ctx)))
+    ;; GitHub: no request, nothing too large.
+    (tether-test-with-handler (lambda (_) (error "Unexpected request"))
+      (should-not (tether--too-large-files (tether-test-github-repo) ctx)))))
+
 (ert-deftest tether-post-test-gitlab-post ()
   (let ((repo (tether-test-gitlab-repo)))
     (tether-test-with-handler

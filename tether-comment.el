@@ -91,6 +91,7 @@ base side; a region must stay on one side of one hunk."
       (unless (eq (eq (plist-get beg :kind) :removed) (eq side 'left))
         (user-error "Tether: the region mixes removed and kept lines; \
 select lines of one side"))
+      (tether--check-line-comments ctx (plist-get end :path))
       (let* ((path (plist-get end :path))
              (map (tether-file-map ctx path))
              (table (and map (if (eq side 'left) (tether-file-map-by-old map)

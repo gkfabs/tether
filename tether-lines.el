@@ -194,10 +194,27 @@ or changed locally."
   (when-let* ((head (tether-head-line ctx path line)))
     (tether-file-map-line (tether-file-map ctx path) head (tether--anywhere-p ctx))))
 
+(defun tether--check-line-comments (ctx path)
+  "Signal a `user-error' when CTX's forge takes no line comment on PATH.
+The forge keeps no diff of a file too large; asked once per context."
+  (let* ((maps (tether-context-maps ctx))
+         (files (pcase (gethash :too-large maps 'none)
+                  ('none (puthash :too-large
+                                  (tether--too-large-files (tether-context-repo ctx) ctx)
+                                  maps))
+                  (files files))))
+    (when (member path files)
+      (user-error "Tether: %s keeps no diff of %s, too large to show, so its \
+lines take no comment; comment on the whole file with `tether-comment-file'"
+                  (if (eq (tether--forge-type (tether-context-repo ctx)) 'gitlab)
+                      "GitLab" "GitHub")
+                  path))))
+
 (defun tether-region-at (ctx path beg end)
   "Return (START . END) `tether-line's for lines BEG to END of the buffer.
 The current buffer visits PATH.  Signal a `user-error' that says why
 when the lines cannot take one comment on CTX's pull request."
+  (tether--check-line-comments ctx path)
   (let* ((drifts (tether--drifts ctx path))
          (head-beg (tether--to-head drifts beg))
          (head-end (tether--to-head drifts end))

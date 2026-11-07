@@ -125,6 +125,22 @@ In the PR, a.el changes line 2 (\"two\" -> \"TWO\") and b.el is added."
           (should (equal (tether-line-new (cdr region)) 12)))
         (should (eq (tether-line-kind (tether-line-at ctx "long.el" 18)) :context))))))
 
+(ert-deftest tether-lines-test-too-large ()
+  "A file whose diff the forge keeps not takes no line comment; asked once."
+  (tether-lines-test-at-head
+    (let ((asked 0))
+      (setf (tether-context-repo ctx) (tether-test-gitlab-repo))
+      (cl-letf (((symbol-function 'tether--too-large-files)
+                 (lambda (_repo _ctx) (cl-incf asked) '("b.el"))))
+        (tether-lines-test-visiting "b.el"
+          (should (string-match-p
+                   "GitLab keeps no diff of b.el, too large to show.*tether-comment-file"
+                   (cadr (should-error (tether-region-at ctx "b.el" 1 1)
+                                       :type 'user-error)))))
+        (tether-lines-test-visiting "a.el"
+          (should (tether-region-at ctx "a.el" 2 2)))
+        (should (= asked 1))))))
+
 (ert-deftest tether-lines-test-blob-buffer ()
   "A tether blob buffer shows the head: lines map as they are."
   (tether-lines-test-at-head

@@ -319,6 +319,14 @@ a comment on several lines stays in one hunk.")
   "Return nil: only the lines of the hunks, by default."
   nil)
 
+(cl-defgeneric tether--too-large-files (repo ctx)
+  "Return the files of CTX's pull request without a diff on REPO's forge.
+Too large to show, so their lines take no comment.")
+
+(cl-defmethod tether--too-large-files (_repo _ctx)
+  "Return nil: by default, every file has its diff on the forge."
+  nil)
+
 (cl-defgeneric tether--pr-prefix (repo)
   "Return the character that prefixes PR numbers on REPO's forge.")
 

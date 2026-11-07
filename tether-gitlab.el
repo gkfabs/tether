@@ -46,6 +46,27 @@ An unchanged line outside the hunks has both its line numbers, as in
 the hunks."
   t)
 
+(cl-defmethod tether--too-large-files ((repo forge-gitlab-repository) ctx)
+  "Return the files of CTX's merge request without a diff on GitLab REPO.
+GitLab marks them too_large; nil when it cannot say."
+  ;; Never in the way of a comment: when GitLab cannot say, as an
+  ;; instance older than 15.7 without this endpoint, none is too large.
+  (condition-case nil
+      (let ((result (tether--wait
+                     (oref repo apihost)
+                     (lambda (done)
+                       (tether--call-async
+                        repo "GET"
+                        (tether-gitlab--merge-request
+                         repo (oref (tether-context-pullreq ctx) number) "/diffs")
+                        done :params '((per_page . 100)) :unpaginate t)))))
+        (and (plist-get result :ok)
+             (delq nil (mapcar (lambda (diff)
+                                 (and (eq (alist-get 'too_large diff) t)
+                                      (alist-get 'new_path diff)))
+                               (plist-get result :value)))))
+    (error nil)))
+
 ;;;; CI
 
 (defconst tether-gitlab--ci-query

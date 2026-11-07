@@ -95,6 +95,15 @@ through `tether--buffer-pullreq' or the stubbed branch lookup."
     (should-not (tether--diff-range-of-pr-p ctx))
     (should-error (tether--diff-target ctx) :type 'user-error)))
 
+(ert-deftest tether-nav-test-too-large-from-diff ()
+  "From the PR diff too, a file the forge keeps no diff of is refused."
+  (tether-nav-test-with (tether-test-gitlab-repo)
+    (cl-letf (((symbol-function 'tether--too-large-files) (lambda (&rest _) '("a.el"))))
+      (tether--show-diff ctx "a.el" 2)
+      (should (string-match-p "keeps no diff of a.el"
+                              (cadr (should-error (tether--diff-target ctx)
+                                                  :type 'user-error)))))))
+
 (ert-deftest tether-nav-test-comment-removed-line ()
   "From the PR diff, a removed line is commented on the base side."
   (tether-nav-test-with (tether-test-gitlab-repo)
